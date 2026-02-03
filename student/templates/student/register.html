@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row justify-content-center">
+  <div class="col-md-7">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-success text-white">
+        <h4 class="mb-0">Student Registration</h4>
+      </div>
+
+      <div class="card-body">
+        <form method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          {{ form.as_p }}
+
+          <button class="btn btn-success w-100 mt-3">
+            Register
+          </button>
+        </form>
+
+        <div class="text-center mt-3">
+          <small>
+            Already have an account?
+            <a href="{% url 'student:login' %}">Login</a>
+          </small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

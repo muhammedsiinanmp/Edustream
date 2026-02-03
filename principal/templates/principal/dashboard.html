@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<style>
+  .admin-hero {
+    background: linear-gradient(135deg, #111827, #1f2933);
+    color: #fff;
+    border-radius: 18px;
+    padding: 26px;
+  }
+
+  .kpi-card {
+    border-radius: 16px;
+    transition: transform .2s ease;
+  }
+
+  .kpi-card:hover {
+    transform: translateY(-4px);
+  }
+
+  .kpi-value {
+    font-size: 2rem;
+    font-weight: 700;
+  }
+
+  .section-card {
+    border-radius: 18px;
+  }
+
+  .table th {
+    font-weight: 600;
+  }
+</style>
+
+<div class="container-fluid">
+
+  <!-- HERO HEADER -->
+  <div class="admin-hero d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h3 class="fw-bold mb-1">Principal Dashboard</h3>
+      <small class="text-light">
+        Administrative overview & approvals
+      </small>
+    </div>
+    <div>
+      <span class="badge bg-success bg-opacity-25 text-success px-3 py-2">
+        Logged in as {{ request.user.username }}
+      </span>
+    </div>
+  </div>
+
+  <!-- KPI CARDS -->
+  <div class="row g-4 mb-5">
+
+    <div class="col-md-3">
+      <div class="card kpi-card shadow-sm border-0 text-center">
+        <div class="card-body">
+          <small class="text-muted">Total Students</small>
+          <div class="kpi-value">{{ student_count }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3">
+      <div class="card kpi-card shadow-sm border-0 text-center">
+        <div class="card-body">
+          <small class="text-muted">Departments</small>
+          <div class="kpi-value">{{ department_count }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3">
+      <div class="card kpi-card shadow-sm border-0 text-center">
+        <div class="card-body">
+          <small class="text-muted">Courses</small>
+          <div class="kpi-value">{{ course_count }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3">
+      <div class="card kpi-card shadow-sm border-0 text-center bg-warning bg-opacity-10">
+        <div class="card-body">
+          <small class="text-muted">Pending Approvals</small>
+          <div class="kpi-value text-warning">
+            {{ pending_purchases|length }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- QUICK MANAGEMENT -->
+  <div class="card section-card shadow-sm border-0 mb-5">
+    <div class="card-body">
+      <h5 class="fw-bold mb-4">Quick Management</h5>
+
+      <div class="row g-4">
+
+        <!-- Students -->
+        <div class="col-md-4">
+          <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+              <h6 class="fw-bold mb-1">Students</h6>
+              <p class="text-muted small mb-3">
+                Manage student accounts.
+              </p>
+              <a href="{% url 'principal:admin_students' %}" class="btn btn-outline-primary btn-sm w-100">
+                Manage Students
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Departments -->
+        <div class="col-md-4">
+          <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+              <h6 class="fw-bold mb-1">Departments</h6>
+              <p class="text-muted small mb-3">
+                Create and organize academic departments.
+              </p>
+              <a href="{% url 'principal:admin_departments' %}" class="btn btn-outline-success btn-sm w-100">
+                Manage Departments
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Courses -->
+        <div class="col-md-4">
+          <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+              <h6 class="fw-bold mb-1">Courses</h6>
+              <p class="text-muted small mb-3">
+                Add, edit, activate, or deactivate add-on courses.
+              </p>
+              <a href="{% url 'principal:admin_courses' %}" class="btn btn-outline-dark btn-sm w-100">
+                Manage Courses
+              </a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- PENDING COURSE REQUESTS -->
+  <div class="card section-card shadow-sm border-0">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0">Pending Course Requests</h5>
+        <span class="text-muted small">
+          Requires your approval
+        </span>
+      </div>
+
+      {% if pending_purchases %}
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Student</th>
+              <th>Course</th>
+              <th>Status</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            {% for p in pending_purchases %}
+            <tr>
+              <td class="fw-semibold">{{ p.student.username }}</td>
+              <td>{{ p.course.name }}</td>
+              <td>
+                <span class="badge bg-warning text-dark">
+                  {{ p.status|title }}
+                </span>
+              </td>
+              <td class="text-end">
+                <a href="{% url 'principal:approve_course' p.id %}" class="btn btn-sm btn-success me-1">
+                  Approve
+                </a>
+                <a href="{% url 'principal:reject_course' p.id %}" class="btn btn-sm btn-outline-danger">
+                  Reject
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="alert alert-success mb-0">
+        No pending course requests. Everything is up to date 🎉
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

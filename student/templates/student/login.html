@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">User Login</h4>
+            </div>
+
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+
+                    <button class="btn btn-primary w-100 mt-3">
+                        Login
+                    </button>
+                    <div class="text-center mt-3">
+                        <a href="{% url 'student:password_reset' %}" class="text-decoration-none">
+                            Forgot your password?
+                        </a>
+                    </div>
+
+                </form>
+
+                <div class="text-center mt-3">
+                    <small>
+                        Don’t have an account?
+                        <a href="{% url 'student:register' %}">Register</a>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

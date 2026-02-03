@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="fw-bold">Courses</h2>
+  <a href="{% url 'principal:admin_add_course' %}" class="btn btn-primary">
+    + Add Course
+  </a>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-bordered align-middle shadow-sm">
+    <thead class="table-light">
+      <tr>
+        <th>Name</th>
+        <th>Description</th>
+        <th>Price</th>
+        <th>Status</th>
+        <th style="width: 160px;">Actions</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for course in courses %}
+      <tr>
+        <td class="fw-semibold">{{ course.name }}</td>
+
+        <td class="text-muted">
+          {{ course.description|truncatewords:12 }}
+        </td>
+
+        <td>₹ {{ course.price }}</td>
+
+        <td>
+          {% if course.status == 'active' %}
+            <span class="badge bg-success">Active</span>
+          {% else %}
+            <span class="badge bg-secondary">Inactive</span>
+          {% endif %}
+        </td>
+
+        <td>
+          <a href="{% url 'principal:admin_edit_course' course.id %}"
+             class="btn btn-sm btn-warning me-1">
+            Edit
+          </a>
+          <a href="{% url 'principal:admin_delete_course' course.id %}"
+             class="btn btn-sm btn-danger"
+             onclick="return confirm('Delete this course?')">
+            Delete
+          </a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="5" class="text-center text-muted">
+          No courses found
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

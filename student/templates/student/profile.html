@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3 class="fw-bold">My Profile</h3>
+        <a href="{% url 'student:student_dashboard' %}" class="btn btn-outline-secondary btn-sm">
+            Back to Dashboard
+        </a>
+    </div>
+
+    <div class="row">
+
+        <!-- PROFILE PIC -->
+        <div class="col-md-4 text-center">
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+
+                    {% if student.profile_pic %}
+                    <img src="{{ student.profile_pic.url }}" class="img-fluid rounded-circle mb-3"
+                        style="width: 150px; height: 150px; object-fit: cover;">
+                    {% else %}
+                    <img src="https://via.placeholder.com/150" class="img-fluid rounded-circle mb-3">
+                    {% endif %}
+
+                    <h5 class="mb-0">{{ student.username }}</h5>
+                    <small class="text-muted">{{ student.email }}</small>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- PROFILE DETAILS -->
+        <div class="col-md-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+
+                    <h5 class="mb-3">Registration Details</h5>
+
+                    <table class="table table-borderless">
+                        <tr>
+                            <th>Username</th>
+                            <td>{{ student.username }}</td>
+                        </tr>
+                        <tr>
+                            <th>Email</th>
+                            <td>{{ student.email }}</td>
+                        </tr>
+                        <tr>
+                            <th>Phone</th>
+                            <td>{{ student.phone|default:"—" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Date of Birth</th>
+                            <td>{{ student.dob|date:"d M Y"|default:"—" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Age</th>
+                            <td>{{ student.age|default:"—" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Department</th>
+                            <td>{{ student.dept|default:"—" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Roll No</th>
+                            <td>{{ student.rollno|default:"—" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Joined On</th>
+                            <td>{{ student.date_joined|date:"d M Y" }}</td>
+                        </tr>
+                    </table>
+
+                    <a href="{% url 'student:edit_profile' %}" class="btn btn-primary btn-sm">
+                        Edit Profile
+                    </a>
+
+
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+    .dashboard-hero {
+        background: linear-gradient(135deg, #0d6efd, #4f46e5);
+        color: #fff;
+        border-radius: 18px;
+        padding: 28px;
+    }
+
+    .stat-card {
+        border-radius: 16px;
+        transition: transform .2s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-3px);
+    }
+
+    .course-card {
+        border-radius: 18px;
+        transition: all .25s ease;
+    }
+
+    .course-card:hover {
+        transform: translateY(-6px);
+        box-shadow: 0 18px 35px rgba(0, 0, 0, .12);
+    }
+
+    .course-meta {
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+
+    .price {
+        font-size: 1.1rem;
+    }
+</style>
+
+<!-- HERO HEADER -->
+<div class="dashboard-hero mb-4 d-flex justify-content-between align-items-center">
+    <div>
+        <h3 class="fw-bold mb-1">Student Dashboard</h3>
+        <small>Welcome, {{ request.user.username }}</small>
+    </div>
+    <div>
+        <a href="{% url 'student:student_profile' %}" class="btn btn-light btn-sm">
+            View Profile
+        </a>
+    </div>
+</div>
+
+<!-- DASHBOARD STATS -->
+<div class="row g-3 mb-5">
+    <div class="col-md-4">
+        <div class="card stat-card shadow-sm border-0 text-center">
+            <div class="card-body">
+                <small class="text-muted">Total Courses</small>
+                <h3 class="fw-bold mt-1">{{ courses|length }}</h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card stat-card shadow-sm border-0 text-center">
+            <div class="card-body">
+                <small class="text-muted">Enrolled Courses</small>
+                <h3 class="fw-bold mt-1">{{ purchases|length }}</h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card stat-card shadow-sm border-0 text-center">
+            <div class="card-body">
+                <small class="text-muted">Completed</small>
+                <h3 class="fw-bold mt-1">
+                    {{ completed_count }}
+                </h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- COURSE DETAILS -->
+<h4 class="fw-bold mb-3">Course Details</h4>
+
+<div class="row g-4">
+    {% for course in courses %}
+    <div class="col-lg-4 col-md-6">
+        <div class="card course-card h-100 border-0 shadow-sm">
+            <div class="card-body d-flex flex-column">
+
+                <!-- Course Info -->
+                <h5 class="fw-bold">{{ course.name }}</h5>
+                <p class="course-meta mb-2">
+                    {{ course.description|truncatewords:20 }}
+                </p>
+
+                <div class="course-meta mb-2">
+                    <strong>Price:</strong> ₹ {{ course.price }}
+                </div>
+
+                <div class="mt-auto">
+
+                    {% if course.id in purchased_course_ids %}
+                    {% for p in purchases %}
+                    {% if p.course.id == course.id %}
+
+                    {% if p.status == 'pending' %}
+                    <span class="badge rounded-pill bg-warning text-dark mb-2">
+                        Pending Approval
+                    </span>
+                    <button class="btn btn-secondary btn-sm w-100" disabled>
+                        Awaiting Approval
+                    </button>
+
+                    {% elif p.status == 'approved' %}
+                    <span class="badge rounded-pill bg-success mb-2">
+                        Enrolled
+                    </span>
+                    <a href="{% url 'student:complete_course' p.id %}" class="btn btn-success btn-sm w-100">
+                        Mark as Completed
+                    </a>
+
+                    {% elif p.status == 'completed' %}
+                    <span class="badge rounded-pill bg-primary mb-2">
+                        Completed
+                    </span>
+                    <button class="btn btn-outline-primary btn-sm w-100" disabled>
+                        Course Completed
+                    </button>
+
+                    {% elif p.status == 'rejected' %}
+                    <span class="badge rounded-pill bg-danger mb-2">
+                        Rejected
+                    </span>
+                    <button class="btn btn-outline-danger btn-sm w-100" disabled>
+                        Request Rejected
+                    </button>
+
+                    {% endif %}
+
+                    {% endif %}
+                    {% endfor %}
+                    {% else %}
+                    <span class="badge rounded-pill bg-secondary mb-2">
+                        Not Enrolled
+                    </span>
+                    <a href="{% url 'student:purchase_course' course.id %}" class="btn btn-primary btn-sm w-100">
+                        Enroll in Course
+                    </a>
+                    {% endif %}
+
+                </div>
+
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="alert alert-info text-center">
+            No courses available right now.
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<h4 class="fw-bold mb-3 mt-5">My Enrolled Courses</h4>
+
+{% if purchases %}
+<div class="table-responsive mb-5">
+    <table class="table align-middle shadow-sm">
+        <thead class="table-light">
+            <tr>
+                <th>Course Name</th>
+                <th>Description</th>
+                <th>Price</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+
+        <tbody>
+            {% for p in purchases %}
+            <tr>
+                <td class="fw-semibold">{{ p.course.name }}</td>
+                <td class="text-muted">
+                    {{ p.course.description|truncatewords:12 }}
+                </td>
+                <td>₹ {{ p.course.price }}</td>
+                <td>
+                    {% if p.status == 'pending' %}
+                    <span class="badge bg-warning text-dark">Pending</span>
+                    {% elif p.status == 'approved' %}
+                    <span class="badge bg-success">Approved</span>
+                    {% elif p.status == 'completed' %}
+                    <span class="badge bg-primary">Completed</span>
+                    {% elif p.status == 'rejected' %}
+                    <span class="badge bg-danger">Rejected</span>
+                    {% endif %}
+
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="alert alert-info mb-5">
+    You are not enrolled in any courses yet.
+</div>
+{% endif %}
+
+
+{% endblock %}
