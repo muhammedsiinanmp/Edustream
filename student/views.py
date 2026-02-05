@@ -2,17 +2,15 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from .forms import StudentRegisterForm, LoginForm
+from .forms import StudentRegisterForm, LoginForm,StudentProfileUpdateForm
 from .models import CoursePurchase
 from principal.models import AddOnCourse
-from .forms import StudentProfileUpdateForm
 from django.core.mail import send_mail
 from django.conf import settings
 
 
-# ============================
 # STUDENT REGISTRATION
-# ============================
+
 def register(request):
     if request.method == "POST":
         form = StudentRegisterForm(request.POST, request.FILES)
@@ -40,9 +38,8 @@ def register(request):
     return render(request, "student/register.html", {"form": form})
 
 
-# ============================
 # STUDENT LOGIN
-# ============================
+
 def login_view(request):
     if request.method == "POST":
         form = LoginForm(request.POST)
@@ -67,19 +64,15 @@ def login_view(request):
     return render(request, "student/login.html", {"form": form})
 
 
-# ============================
 # LOGOUT
-# ============================
+
 def logout_view(request):
     logout(request)
     messages.info(request, "Logged out successfully")
     return redirect("student:login")
 
 
-# ============================
 # STUDENT DASHBOARD
-# ============================
-
 
 @login_required(login_url="student:login")
 def student_dashboard(request):
@@ -103,9 +96,8 @@ def student_dashboard(request):
     return render(request, "student/dashboard.html", context)
 
 
-# ============================
 # PURCHASE COURSE (REQUEST)
-# ============================
+
 @login_required(login_url="student:login")
 def purchase_course(request, course_id):
     course = get_object_or_404(AddOnCourse, id=course_id)
@@ -121,9 +113,8 @@ def purchase_course(request, course_id):
     return redirect("student:student_dashboard")
 
 
-# ============================
 # COMPLETE COURSE
-# ============================
+
 @login_required(login_url="student:login")
 def complete_course(request, purchase_id):
     purchase = get_object_or_404(CoursePurchase, id=purchase_id, student=request.user)
@@ -137,7 +128,6 @@ def complete_course(request, purchase_id):
 
 
 # Student Profile
-
 
 @login_required(login_url="student:login")
 def student_profile(request):

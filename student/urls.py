@@ -14,6 +14,7 @@ urlpatterns = [
     path("profile/edit/", views.edit_profile, name="edit_profile"),
     path("purchase/<int:course_id>/", views.purchase_course, name="purchase_course"),
     path("complete/<int:purchase_id>/", views.complete_course, name="complete_course"),
+
     # 🔐 PASSWORD RESET
     path(
         "password-reset/",
