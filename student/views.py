@@ -103,16 +103,21 @@ def student_dashboard(request):
 @require_POST
 @login_required(login_url="student:login")
 def purchase_course(request, course_id):
-    course = get_object_or_404(AddOnCourse, id=course_id)
+    if request.user.is_staff:
+        messages.error(request, "Staff accounts cannot request courses")
+        return redirect("principal:admin_dashboard")
 
-    # Prevent duplicate purchase
-    if CoursePurchase.objects.filter(student=request.user, course=course).exists():
+    course = get_object_or_404(AddOnCourse, id=course_id, status="active")
+
+    # get_or_create also absorbs the IntegrityError from a simultaneous submit
+    _, created = CoursePurchase.objects.get_or_create(
+        student=request.user, course=course, defaults={"status": "pending"}
+    )
+
+    if created:
+        messages.success(request, "Course request submitted for approval")
+    else:
         messages.info(request, "You already requested this course")
-        return redirect("student:student_dashboard")
-
-    CoursePurchase.objects.create(student=request.user, course=course, status="pending")
-
-    messages.success(request, "Course request submitted for approval")
     return redirect("student:student_dashboard")
 
 

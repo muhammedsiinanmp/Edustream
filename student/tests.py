@@ -3,6 +3,7 @@ import re
 import tempfile
 from io import BytesIO
 from pathlib import Path
+from unittest import mock
 
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -80,6 +81,39 @@ class EnrollmentTests(TestCase):
         url = reverse("student:purchase_course", args=[self.course.id])
         self.client.post(url)
         self.client.post(url)
+        self.assertEqual(CoursePurchase.objects.count(), 1)
+
+    def test_inactive_course_cannot_be_requested(self):
+        self.course.status = "inactive"
+        self.course.save()
+        response = self.client.post(
+            reverse("student:purchase_course", args=[self.course.id])
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(CoursePurchase.objects.exists())
+
+    def test_staff_cannot_request_course(self):
+        admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(admin)
+        response = self.client.post(
+            reverse("student:purchase_course", args=[self.course.id])
+        )
+        self.assertRedirects(response, reverse("principal:admin_dashboard"))
+        self.assertFalse(CoursePurchase.objects.exists())
+
+    def test_racing_double_submit_does_not_return_500(self):
+        # Simulates the second of two simultaneous requests: its duplicate
+        # check ran before the first request's row was committed.
+        url = reverse("student:purchase_course", args=[self.course.id])
+        self.client.post(url)
+        self.client.raise_request_exception = False
+
+        with mock.patch("django.db.models.query.QuerySet.exists", return_value=False):
+            response = self.client.post(url)
+
+        self.assertEqual(response.status_code, 302)
         self.assertEqual(CoursePurchase.objects.count(), 1)
 
     def test_only_approved_course_can_be_completed(self):
