@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.db.models import ProtectedError
 from django.views.decorators.http import require_POST
 from student.models import Student, CoursePurchase
+from student.notifications import notify
 from .models import Department, AddOnCourse
 from .forms import (
     AdminStudentForm,
@@ -212,6 +213,13 @@ def approve_course(request, purchase_id):
         purchase.status = "approved"
         purchase.save()
         messages.success(request, f"Approved course for {purchase.student.username}")
+        notify(
+            purchase.student,
+            "Your Edustream course request was approved",
+            f"Hi {purchase.student.username},\n\n"
+            f"Your request for {purchase.course.name} has been approved.\n\n"
+            "— Edustream Team",
+        )
 
     return redirect("principal:admin_dashboard")
 
@@ -226,5 +234,12 @@ def reject_course(request, purchase_id):
         purchase.status = "rejected"
         purchase.save()
         messages.warning(request, f"Rejected course for {purchase.student.username}")
+        notify(
+            purchase.student,
+            "Your Edustream course request was rejected",
+            f"Hi {purchase.student.username},\n\n"
+            f"Your request for {purchase.course.name} was not approved.\n\n"
+            "— Edustream Team",
+        )
 
     return redirect("principal:admin_dashboard")

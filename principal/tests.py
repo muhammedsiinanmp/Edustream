@@ -1,4 +1,7 @@
+from unittest import mock
+
 from django.contrib.auth.models import AnonymousUser
+from django.core import mail
 from django.db import connection
 from django.test import Client, RequestFactory, TestCase
 from django.test.utils import CaptureQueriesContext
@@ -459,3 +462,65 @@ class PaginationTests(TestCase):
         self.assertEqual(len(response.context["pending_purchases"]), 20)
         self.assertEqual(response.context["pending_purchases"].paginator.count, 25)
         self.assertContains(response, "?page=2")
+
+
+class DecisionEmailTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        self.purchase = CoursePurchase.objects.create(
+            student=self.student, course=self.course
+        )
+        self.approve_url = reverse("principal:approve_course", args=[self.purchase.id])
+        self.reject_url = reverse("principal:reject_course", args=[self.purchase.id])
+        self.client.force_login(self.admin)
+
+    def test_approval_emails_the_student(self):
+        self.client.post(self.approve_url)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["asha@example.com"])
+        self.assertIn("approved", mail.outbox[0].subject.lower())
+        self.assertIn("Cloud Fundamentals", mail.outbox[0].body)
+
+    def test_rejection_emails_the_student(self):
+        self.client.post(self.reject_url)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["asha@example.com"])
+        self.assertIn("rejected", mail.outbox[0].subject.lower())
+        self.assertIn("Cloud Fundamentals", mail.outbox[0].body)
+
+    def test_repeat_decision_sends_no_second_email(self):
+        self.client.post(self.approve_url)
+        self.client.post(self.approve_url)
+        self.client.post(self.reject_url)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_mail_failure_is_logged_and_the_decision_still_stands(self):
+        for url, status in (
+            (self.approve_url, "approved"),
+            (self.reject_url, "rejected"),
+        ):
+            with self.subTest(status=status):
+                CoursePurchase.objects.filter(id=self.purchase.id).update(
+                    status="pending"
+                )
+                with (
+                    mock.patch(
+                        "django.core.mail.backends.locmem.EmailBackend.send_messages",
+                        side_effect=OSError("mail server down"),
+                    ),
+                    self.assertLogs("student.notifications", "ERROR") as logs,
+                ):
+                    response = self.client.post(url)
+
+                self.assertRedirects(response, reverse("principal:admin_dashboard"))
+                self.purchase.refresh_from_db()
+                self.assertEqual(self.purchase.status, status)
+                self.assertIn("mail server down", logs.output[0])
