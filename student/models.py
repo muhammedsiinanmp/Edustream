@@ -50,7 +50,7 @@ class Student(AbstractUser):
     
 class CoursePurchase(models.Model):
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
-    course = models.ForeignKey('principal.AddOnCourse', on_delete=models.CASCADE)
+    course = models.ForeignKey('principal.AddOnCourse', on_delete=models.PROTECT)
     status = models.CharField(
         max_length=20,
         choices=[

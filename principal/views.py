@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
+from django.db.models import ProtectedError
 from django.views.decorators.http import require_POST
 from student.models import Student, CoursePurchase
 from .models import Department, AddOnCourse
@@ -163,8 +164,16 @@ def admin_edit_course(request, id):
 @user_passes_test(is_admin)
 def admin_delete_course(request, id):
     course = get_object_or_404(AddOnCourse, id=id)
-    course.delete()
-    messages.success(request, "Course deleted successfully")
+    try:
+        course.delete()
+    except ProtectedError:
+        messages.error(
+            request,
+            "This course has enrollment history and can't be deleted. "
+            "Deactivate it instead by setting its status to Inactive.",
+        )
+    else:
+        messages.success(request, "Course deleted successfully")
     return redirect("principal:admin_courses")
 
 

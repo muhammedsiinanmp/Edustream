@@ -275,3 +275,36 @@ class CoursePriceTests(TestCase):
         )
         self.assertRedirects(response, reverse("principal:admin_courses"))
         self.assertEqual(AddOnCourse.objects.get(name="Data Basics").price, 0)
+
+
+class CourseDeletionTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        self.url = reverse("principal:admin_delete_course", args=[self.course.id])
+        self.client.force_login(self.admin)
+
+    def test_course_with_enrollments_is_kept_and_steers_to_deactivation(self):
+        purchase = CoursePurchase.objects.create(
+            student=self.student, course=self.course, status="completed"
+        )
+
+        response = self.client.post(self.url, follow=True)
+
+        self.assertRedirects(response, reverse("principal:admin_courses"))
+        self.assertContains(response, "Deactivate")
+        self.assertContains(response, "alert-danger")
+        self.assertTrue(AddOnCourse.objects.filter(id=self.course.id).exists())
+        self.assertTrue(CoursePurchase.objects.filter(id=purchase.id).exists())
+
+    def test_course_without_enrollments_can_be_deleted(self):
+        response = self.client.post(self.url)
+        self.assertRedirects(response, reverse("principal:admin_courses"))
+        self.assertFalse(AddOnCourse.objects.filter(id=self.course.id).exists())
