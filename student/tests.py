@@ -176,3 +176,38 @@ class ProfilePhotoTests(TestCase):
         with Image.open(self.media_root / self.student.profile_pic.name) as stored:
             self.assertEqual(stored.format, "PNG")
             self.assertEqual(stored.size, (8, 6))
+
+
+class StudentAdminTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(self.admin)
+
+    def test_password_set_in_admin_is_hashed(self):
+        response = self.client.post(
+            reverse("admin:student_student_add"),
+            {
+                "username": "ravi",
+                "email": "ravi@example.com",
+                "usable_password": "true",
+                "password1": "Admin-made-7395",
+                "password2": "Admin-made-7395",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        student = Student.objects.get(username="ravi")
+        self.assertNotEqual(student.password, "Admin-made-7395")
+        self.assertTrue(student.check_password("Admin-made-7395"))
+
+    def test_change_page_does_not_expose_password_as_editable_text(self):
+        student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        response = self.client.get(
+            reverse("admin:student_student_change", args=[student.id])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'name="password"')
