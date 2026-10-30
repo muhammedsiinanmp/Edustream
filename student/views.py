@@ -5,9 +5,8 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from .forms import StudentRegisterForm, LoginForm,StudentProfileUpdateForm
 from .models import CoursePurchase
+from .notifications import notify
 from principal.models import AddOnCourse
-from django.core.mail import send_mail
-from django.conf import settings
 
 
 # STUDENT REGISTRATION
@@ -18,17 +17,13 @@ def register(request):
         if form.is_valid():
             student = form.save()
             
-            send_mail(
-                subject="Welcome to Edustream 🎓",
-                message=(
-                    f"Hi {student.username},\n\n"
-                    "Welcome to Edustream!\n\n"
-                    "Your account has been created successfully.\n\n"
-                    "— Edustream Team"
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[student.email],
-                fail_silently=True, 
+            notify(
+                student,
+                "Welcome to Edustream 🎓",
+                f"Hi {student.username},\n\n"
+                "Welcome to Edustream!\n\n"
+                "Your account has been created successfully.\n\n"
+                "— Edustream Team",
             )
 
             messages.success(request, "Registration successful. Please login.")

@@ -1,10 +1,12 @@
 import os
 import re
+import smtplib
 import tempfile
 from io import BytesIO
 from pathlib import Path
 from unittest import mock
 
+from django.conf import settings
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management.base import CommandError
@@ -587,6 +589,53 @@ class RegistrationTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Student.objects.exists())
+
+
+class EmailFailureTests(TestCase):
+    def broken_mail_server(self):
+        return mock.patch(
+            "django.core.mail.backends.locmem.EmailBackend.send_messages",
+            side_effect=smtplib.SMTPException("server unavailable"),
+        )
+
+    def test_smtp_connections_time_out(self):
+        connection = mail.get_connection(
+            "django.core.mail.backends.smtp.EmailBackend"
+        )
+        self.assertEqual(connection.timeout, settings.EMAIL_TIMEOUT)
+        self.assertGreater(connection.timeout, 0)
+
+    def test_failed_welcome_email_is_logged_and_registration_succeeds(self):
+        data = {
+            "username": "ravi",
+            "email": "ravi@example.com",
+            "password": "Sturdy-pass-7395",
+            "confirm_password": "Sturdy-pass-7395",
+        }
+        with self.broken_mail_server(), self.assertLogs("student", "ERROR") as logs:
+            response = self.client.post(reverse("student:register"), data)
+
+        self.assertRedirects(response, reverse("student:login"))
+        self.assertTrue(Student.objects.filter(username="ravi").exists())
+        self.assertIn("server unavailable", logs.output[0])
+
+    def test_failed_reset_email_is_logged_and_the_page_stays_neutral(self):
+        Student.objects.create_user("asha", "asha@example.com", "Demo-pass-4821")
+        with (
+            self.broken_mail_server(),
+            self.assertLogs("django.contrib.auth", "ERROR"),
+        ):
+            response = self.client.post(
+                reverse("student:password_reset"),
+                {"email": "asha@example.com"},
+                follow=True,
+            )
+        self.assertEqual(response.status_code, 200)
+
+    def test_reset_sent_page_does_not_claim_an_email_was_sent(self):
+        response = self.client.get(reverse("student:password_reset_done"))
+        self.assertNotContains(response, "Email Sent")
+        self.assertContains(response, "If an account exists")
 
 
 class EmailNormalisationTests(TestCase):
