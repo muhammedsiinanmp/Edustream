@@ -84,11 +84,15 @@ Open http://localhost:8000. Log in with the superuser account to reach the princ
 
 ## Tests
 
+The tests need a running PostgreSQL server and a `.env` file. Settings read the database credentials and `EMAIL_PORT` from it, and startup fails if `EMAIL_PORT` is missing. Django creates a separate test database, so the `DB_USER` role must be allowed to create databases.
+
 ```bash
 python manage.py test
 ```
 
-The suite covers the password reset flow, enrollment rules, role checks and CSRF protection.
+The suite covers the password reset flow, enrollment rules, role checks, CSRF protection, page access for each role and profile photo upload.
+
+CI runs the same tests against PostgreSQL 18 on every pull request and on pushes to `main`, using dummy values set in `.github/workflows/ci.yml`.
 
 ## License
 
