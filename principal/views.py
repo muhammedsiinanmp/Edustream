@@ -54,7 +54,7 @@ def admin_add_student(request):
 @login_required(login_url="login")
 @user_passes_test(is_admin)
 def admin_edit_student(request, id):
-    student = get_object_or_404(Student, id=id)
+    student = get_object_or_404(Student, id=id, is_staff=False)
 
     if request.method == "POST":
         form = AdminEditStudentForm(request.POST, instance=student)
@@ -72,7 +72,7 @@ def admin_edit_student(request, id):
 @login_required(login_url="login")
 @user_passes_test(is_admin)
 def admin_delete_student(request, id):
-    student = get_object_or_404(Student, id=id)
+    student = get_object_or_404(Student, id=id, is_staff=False)
     student.delete()
     messages.success(request, "Student deleted successfully")
     return redirect("principal:admin_students")

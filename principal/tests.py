@@ -146,3 +146,30 @@ class DepartmentEditTests(TestCase):
         self.assertRedirects(response, reverse("principal:admin_departments"))
         self.department.refresh_from_db()
         self.assertEqual(self.department.name, "Business")
+
+
+class StaffAccountProtectionTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.colleague = Student.objects.create_user(
+            "vice", "vice@example.com", "Demo-pass-4821", is_staff=True
+        )
+        self.client.force_login(self.admin)
+
+    def test_student_edit_page_does_not_open_staff_accounts(self):
+        url = reverse("principal:admin_edit_student", args=[self.colleague.id])
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.assertEqual(self.client.post(url, {"rollno": 7}).status_code, 404)
+        self.colleague.refresh_from_db()
+        self.assertIsNone(self.colleague.rollno)
+
+    def test_student_delete_does_not_remove_staff_accounts(self):
+        for account in (self.colleague, self.admin):
+            with self.subTest(account=account.username):
+                response = self.client.post(
+                    reverse("principal:admin_delete_student", args=[account.id])
+                )
+                self.assertEqual(response.status_code, 404)
+                self.assertTrue(Student.objects.filter(id=account.id).exists())
