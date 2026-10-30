@@ -65,6 +65,37 @@ class PasswordResetTests(TestCase):
         self.assertTrue(self.student.check_password(new_password))
 
 
+    def test_invalid_reset_link_explains_itself_and_offers_a_new_one(self):
+        response = self.client.get(
+            reverse(
+                "student:password_reset_confirm",
+                kwargs={"uidb64": "bad", "token": "bad-token"},
+            ),
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["validlink"])
+        self.assertContains(response, "expired")
+        self.assertContains(response, reverse("student:password_reset"))
+        self.assertNotContains(response, "Update Password")
+
+    def test_reset_link_cannot_be_used_twice(self):
+        self.client.post(
+            reverse("student:password_reset"), {"email": "asha@example.com"}
+        )
+        link = re.search(r"https?://[^/]+(/student/reset/\S+)", mail.outbox[0].body)
+        form_page = self.client.get(link.group(1), follow=True)
+        form_url = form_page.redirect_chain[-1][0]
+        self.client.post(
+            form_url,
+            {"new_password1": "New-pass-7395", "new_password2": "New-pass-7395"},
+        )
+
+        reused = self.client.get(link.group(1), follow=True)
+        self.assertFalse(reused.context["validlink"])
+        self.assertContains(reused, "expired")
+
+
 class EnrollmentTests(TestCase):
     def setUp(self):
         self.student = Student.objects.create_user(
