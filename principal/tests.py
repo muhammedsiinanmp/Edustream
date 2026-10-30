@@ -524,3 +524,126 @@ class DecisionEmailTests(TestCase):
                 self.purchase.refresh_from_db()
                 self.assertEqual(self.purchase.status, status)
                 self.assertIn("mail server down", logs.output[0])
+
+
+class StudentCrudTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.department = Department.objects.create(
+            name="Commerce", description="Finance."
+        )
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(self.admin)
+
+    def test_list_shows_students_and_not_staff(self):
+        response = self.client.get(reverse("principal:admin_students"))
+        self.assertContains(response, "asha@example.com")
+        self.assertNotContains(response, "principal@example.com")
+
+    def test_edit_updates_roll_number_and_department(self):
+        response = self.client.post(
+            reverse("principal:admin_edit_student", args=[self.student.id]),
+            {"rollno": 42, "dept": self.department.id},
+        )
+        self.assertRedirects(response, reverse("principal:admin_students"))
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.rollno, 42)
+        self.assertEqual(self.student.dept, self.department)
+
+    def test_duplicate_roll_number_is_rejected(self):
+        Student.objects.create_user(
+            "ravi", "ravi@example.com", "Demo-pass-4821", rollno=42
+        )
+        response = self.client.post(
+            reverse("principal:admin_edit_student", args=[self.student.id]),
+            {"rollno": 42},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.student.refresh_from_db()
+        self.assertIsNone(self.student.rollno)
+
+    def test_delete_removes_student(self):
+        response = self.client.post(
+            reverse("principal:admin_delete_student", args=[self.student.id])
+        )
+        self.assertRedirects(response, reverse("principal:admin_students"))
+        self.assertFalse(Student.objects.filter(id=self.student.id).exists())
+
+
+class DepartmentCrudTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(self.admin)
+
+    def test_add_creates_department(self):
+        response = self.client.post(
+            reverse("principal:admin_add_department"),
+            {"name": "Science", "description": "Labs."},
+        )
+        self.assertRedirects(response, reverse("principal:admin_departments"))
+        self.assertTrue(Department.objects.filter(name="Science").exists())
+
+    def test_delete_keeps_the_students_who_belonged_to_it(self):
+        department = Department.objects.create(name="Commerce", description="x")
+        student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821", dept=department
+        )
+
+        response = self.client.post(
+            reverse("principal:admin_delete_department", args=[department.id])
+        )
+
+        self.assertRedirects(response, reverse("principal:admin_departments"))
+        self.assertFalse(Department.objects.filter(id=department.id).exists())
+        student.refresh_from_db()
+        self.assertIsNone(student.dept)
+
+
+class CourseCrudTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(self.admin)
+
+    def test_add_creates_course(self):
+        response = self.client.post(
+            reverse("principal:admin_add_course"),
+            {
+                "name": "Data Basics",
+                "description": "Intro.",
+                "price": 500,
+                "status": "active",
+            },
+        )
+        self.assertRedirects(response, reverse("principal:admin_courses"))
+        self.assertEqual(AddOnCourse.objects.get(name="Data Basics").price, 500)
+
+    def test_edit_can_deactivate_a_course_with_enrollments(self):
+        course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        CoursePurchase.objects.create(student=student, course=course)
+
+        response = self.client.post(
+            reverse("principal:admin_edit_course", args=[course.id]),
+            {
+                "name": course.name,
+                "description": course.description,
+                "price": course.price,
+                "status": "inactive",
+            },
+        )
+
+        self.assertRedirects(response, reverse("principal:admin_courses"))
+        course.refresh_from_db()
+        self.assertEqual(course.status, "inactive")

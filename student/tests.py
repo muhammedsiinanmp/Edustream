@@ -19,7 +19,7 @@ from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
 
-from principal.models import AddOnCourse
+from principal.models import AddOnCourse, Department
 from student.models import CoursePurchase, Student
 
 UUID_PHOTO_NAME = re.compile(r"^profiles/[0-9a-f]{32}\.(jpg|png|webp)$")
@@ -35,6 +35,55 @@ class LoginFormTests(TestCase):
     def test_password_input_is_masked(self):
         response = self.client.get(reverse("student:login"))
         self.assertContains(response, 'type="password"')
+
+
+class LoginTests(TestCase):
+    def setUp(self):
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.url = reverse("student:login")
+
+    def log_in(self, username, password="Demo-pass-4821"):
+        return self.client.post(self.url, {"username": username, "password": password})
+
+    def test_student_goes_to_the_student_dashboard(self):
+        self.assertRedirects(
+            self.log_in("asha"), reverse("student:student_dashboard")
+        )
+        self.assertEqual(
+            self.client.session["_auth_user_id"], str(self.student.id)
+        )
+
+    def test_staff_goes_to_the_principal_dashboard(self):
+        self.assertRedirects(
+            self.log_in("principal"), reverse("principal:admin_dashboard")
+        )
+
+    def test_wrong_password_is_refused(self):
+        response = self.log_in("asha", "Wrong-pass-0000")
+        self.assertContains(response, "Invalid credentials")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_deactivated_account_is_refused(self):
+        self.student.is_active = False
+        self.student.save()
+        self.assertContains(self.log_in("asha"), "Invalid credentials")
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_full_login_then_logout(self):
+        self.log_in("asha")
+        dashboard = reverse("student:student_dashboard")
+        self.assertEqual(self.client.get(dashboard).status_code, 200)
+
+        self.client.post(reverse("student:logout"))
+
+        self.assertRedirects(
+            self.client.get(dashboard), "/", fetch_redirect_response=False
+        )
 
 
 class PasswordResetTests(TestCase):
@@ -132,6 +181,50 @@ class NavbarTests(TestCase):
         url = reverse("principal:admin_dashboard")
         self.assertContains(response, self.BRAND.format(url))
         self.assertContains(response, f'href="{url}" class="nav-dashboard')
+
+
+class ProfileEditTests(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(
+            name="Commerce", description="Finance."
+        )
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.url = reverse("student:edit_profile")
+        self.client.force_login(self.student)
+
+    def test_saved_details_appear_on_the_profile_page(self):
+        response = self.client.post(
+            self.url,
+            {
+                "email": "asha.new@example.com",
+                "phone": "9876543210",
+                "dob": "2005-04-12",
+                "age": "21",
+                "dept": self.department.id,
+            },
+            follow=True,
+        )
+
+        self.assertRedirects(response, reverse("student:student_profile"))
+        for text in ("asha.new@example.com", "9876543210", "12 Apr 2005", "Commerce"):
+            self.assertContains(response, text)
+
+    def test_form_cannot_change_role_or_roll_number(self):
+        self.client.post(
+            self.url,
+            {"email": "asha@example.com", "is_staff": "on", "rollno": "99"},
+        )
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.is_staff)
+        self.assertIsNone(self.student.rollno)
+
+    def test_invalid_email_is_rejected(self):
+        response = self.client.post(self.url, {"email": "not-an-email"})
+        self.assertEqual(response.status_code, 200)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.email, "asha@example.com")
 
 
 class PasswordChangeTests(TestCase):
@@ -373,6 +466,21 @@ class PageSmokeTests(TestCase):
                 self.assertRedirects(
                     self.client.get(url), "/", fetch_redirect_response=False
                 )
+
+    def test_logged_out_post_to_an_action_changes_nothing(self):
+        course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        response = self.client.post(
+            reverse("student:purchase_course", args=[course.id])
+        )
+        self.assertRedirects(response, "/", fetch_redirect_response=False)
+        self.assertFalse(CoursePurchase.objects.exists())
+
+    def test_media_urls_skip_the_login_redirect(self):
+        # README states this: /media/ is exempt from PublicAccessMiddleware.
+        response = self.client.get("/media/profiles/missing.png")
+        self.assertEqual(response.status_code, 404)
 
     def test_staff_dashboard_redirects_to_principal_dashboard(self):
         admin = Student.objects.create_superuser(
