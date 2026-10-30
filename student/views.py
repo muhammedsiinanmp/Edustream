@@ -67,6 +67,7 @@ def login_view(request):
 
 # LOGOUT
 
+@require_POST
 def logout_view(request):
     logout(request)
     messages.info(request, "Logged out successfully")

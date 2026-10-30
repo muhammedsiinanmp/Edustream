@@ -6,7 +6,7 @@ from pathlib import Path
 
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
@@ -147,9 +147,44 @@ class PageSmokeTests(TestCase):
     def test_logout_returns_to_login(self):
         self.client.force_login(self.student)
         self.assertRedirects(
-            self.client.get(reverse("student:logout")), reverse("student:login")
+            self.client.post(reverse("student:logout")), reverse("student:login")
         )
         self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_get_does_not_log_out(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("student:logout"))
+        self.assertEqual(response.status_code, 405)
+        self.assertIn("_auth_user_id", self.client.session)
+
+    def test_logout_without_csrf_token_is_rejected(self):
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(self.student)
+        response = client.post(reverse("student:logout"))
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("_auth_user_id", client.session)
+
+    def test_navbar_logs_out_with_a_csrf_protected_post_form(self):
+        client = Client(enforce_csrf_checks=True)
+        client.force_login(self.student)
+        page = client.get(reverse("student:student_dashboard")).content.decode()
+
+        logout_form = re.search(
+            rf'<form[^>]*action="{reverse("student:logout")}"[^>]*>.*?</form>',
+            page,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(logout_form)
+        self.assertIn('method="post"', logout_form.group(0))
+        token = re.search(
+            r'name="csrfmiddlewaretoken" value="([^"]+)"', logout_form.group(0)
+        )
+
+        response = client.post(
+            reverse("student:logout"), {"csrfmiddlewaretoken": token.group(1)}
+        )
+        self.assertRedirects(response, reverse("student:login"))
+        self.assertNotIn("_auth_user_id", client.session)
 
 
 class ProfilePhotoTests(TestCase):
