@@ -11,20 +11,24 @@ from .forms import (
     DepartmentForm,
     AddOnCourseForm,
 )
-from .utils import is_admin
+from .utils import is_admin, paginate
 
 
 # ADMIN DASHBOARD
 @login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_dashboard(request):
-    pending_purchases = CoursePurchase.objects.filter(status="pending")
+    pending_purchases = (
+        CoursePurchase.objects.filter(status="pending")
+        .select_related("student", "course")
+        .order_by("created_at", "id")
+    )
 
     context = {
         "student_count": Student.objects.count(),
         "department_count": Department.objects.count(),
         "course_count": AddOnCourse.objects.count(),
-        "pending_purchases": pending_purchases,
+        "pending_purchases": paginate(request, pending_purchases),
     }
     return render(request, "principal/dashboard.html", context)
 
@@ -33,8 +37,10 @@ def admin_dashboard(request):
 @login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_students(request):
-    students = Student.objects.filter(is_staff=False)
-    return render(request, "principal/students.html", {"students": students})
+    students = Student.objects.filter(is_staff=False).select_related("dept").order_by("id")
+    return render(
+        request, "principal/students.html", {"students": paginate(request, students)}
+    )
 
 
 @login_required(login_url="student:login")
@@ -83,8 +89,12 @@ def admin_delete_student(request, id):
 @login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_departments(request):
-    departments = Department.objects.all()
-    return render(request, "principal/departments.html", {"departments": departments})
+    departments = Department.objects.order_by("id")
+    return render(
+        request,
+        "principal/departments.html",
+        {"departments": paginate(request, departments)},
+    )
 
 
 @login_required(login_url="student:login")
@@ -128,8 +138,10 @@ def admin_delete_department(request, id):
 @login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_courses(request):
-    courses = AddOnCourse.objects.all()
-    return render(request, "principal/courses.html", {"courses": courses})
+    courses = AddOnCourse.objects.order_by("id")
+    return render(
+        request, "principal/courses.html", {"courses": paginate(request, courses)}
+    )
 
 
 @login_required(login_url="student:login")
@@ -175,6 +187,18 @@ def admin_delete_course(request, id):
     else:
         messages.success(request, "Course deleted successfully")
     return redirect("principal:admin_courses")
+
+
+# ENROLLMENT HISTORY
+@login_required(login_url="student:login")
+@user_passes_test(is_admin)
+def admin_enrollments(request):
+    purchases = CoursePurchase.objects.select_related("student", "course").order_by(
+        "-created_at", "-id"
+    )
+    return render(
+        request, "principal/enrollments.html", {"purchases": paginate(request, purchases)}
+    )
 
 
 # COURSE APPROVAL FLOW

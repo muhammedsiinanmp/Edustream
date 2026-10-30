@@ -14,6 +14,7 @@ from django.core.management.base import CommandError
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test import Client, TestCase, TransactionTestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
@@ -214,6 +215,43 @@ class CourseCompletionTests(TestCase):
         self.assertEqual(self.client.post(self.url).status_code, 404)
         self.purchase.refresh_from_db()
         self.assertEqual(self.purchase.status, "approved")
+
+
+class StudentDashboardListTests(TestCase):
+    def setUp(self):
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.url = reverse("student:student_dashboard")
+        self.client.force_login(self.student)
+
+    def add_enrollments(self, count):
+        for _ in range(count):
+            course = AddOnCourse.objects.create(
+                name="Course", description="Intro.", price=100
+            )
+            CoursePurchase.objects.create(student=self.student, course=course)
+
+    def query_count(self):
+        with CaptureQueriesContext(connection) as queries:
+            self.assertEqual(self.client.get(self.url).status_code, 200)
+        return len(queries)
+
+    def test_query_count_does_not_grow_with_enrollments(self):
+        self.add_enrollments(2)
+        before = self.query_count()
+        self.add_enrollments(10)
+        self.assertEqual(self.query_count(), before)
+
+    def test_course_catalogue_is_paginated_with_an_accurate_total(self):
+        self.add_enrollments(25)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(len(response.context["courses"]), 20)
+        self.assertEqual(response.context["courses"].paginator.count, 25)
+        self.assertContains(response, "?page=2")
+        self.assertEqual(len(response.context["purchases"]), 25)
 
 
 class PageSmokeTests(TestCase):

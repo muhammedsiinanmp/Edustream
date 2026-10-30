@@ -7,6 +7,7 @@ from .forms import StudentRegisterForm, LoginForm,StudentProfileUpdateForm
 from .models import CoursePurchase
 from .notifications import notify
 from principal.models import AddOnCourse
+from principal.utils import paginate
 
 
 # STUDENT REGISTRATION
@@ -77,8 +78,8 @@ def student_dashboard(request):
     if request.user.is_staff:
         return redirect("principal:admin_dashboard")
 
-    courses = AddOnCourse.objects.filter(status="active")
-    purchases = CoursePurchase.objects.filter(student=request.user)
+    courses = paginate(request, AddOnCourse.objects.filter(status="active").order_by("id"))
+    purchases = CoursePurchase.objects.filter(student=request.user).select_related("course")
 
     purchased_course_ids = purchases.values_list("course_id", flat=True)
     completed_count = purchases.filter(status="completed").count()

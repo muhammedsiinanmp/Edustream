@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="fw-bold">Enrollment History</h2>
+  <a href="{% url 'principal:admin_dashboard' %}" class="btn btn-outline-secondary">
+    Back to Dashboard
+  </a>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-bordered align-middle shadow-sm">
+    <thead class="table-light">
+      <tr>
+        <th>Student</th>
+        <th>Course</th>
+        <th>Status</th>
+        <th>Requested On</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for p in purchases %}
+      <tr>
+        <td class="fw-semibold">{{ p.student.username }}</td>
+        <td>{{ p.course.name }}</td>
+        <td>
+          {% if p.status == 'pending' %}
+            <span class="badge bg-warning text-dark">Pending</span>
+          {% elif p.status == 'approved' %}
+            <span class="badge bg-success">Approved</span>
+          {% elif p.status == 'completed' %}
+            <span class="badge bg-primary">Completed</span>
+          {% elif p.status == 'rejected' %}
+            <span class="badge bg-danger">Rejected</span>
+          {% endif %}
+        </td>
+        <td>{{ p.created_at|date:"d M Y" }}</td>
+      </tr>
+      {% empty %}
+      <tr>
+        <td colspan="4" class="text-center text-muted">
+          No enrollments found
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include 'includes/pagination.html' with page_obj=purchases %}
+
+{% endblock %}

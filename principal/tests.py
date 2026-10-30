@@ -1,5 +1,7 @@
 from django.contrib.auth.models import AnonymousUser
+from django.db import connection
 from django.test import Client, RequestFactory, TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from principal.models import AddOnCourse, Department
@@ -308,3 +310,152 @@ class CourseDeletionTests(TestCase):
         response = self.client.post(self.url)
         self.assertRedirects(response, reverse("principal:admin_courses"))
         self.assertFalse(AddOnCourse.objects.filter(id=self.course.id).exists())
+
+
+class EnrollmentHistoryTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.url = reverse("principal:admin_enrollments")
+        self.client.force_login(self.admin)
+
+    def test_every_status_is_listed(self):
+        for status in ("pending", "approved", "completed", "rejected"):
+            course = AddOnCourse.objects.create(
+                name=f"Course {status}", description="Intro.", price=100
+            )
+            CoursePurchase.objects.create(
+                student=self.student, course=course, status=status
+            )
+
+        response = self.client.get(self.url)
+
+        for status in ("pending", "approved", "completed", "rejected"):
+            self.assertContains(response, f"Course {status}")
+        self.assertContains(response, "asha")
+
+    def test_history_is_paginated_newest_first(self):
+        for number in range(25):
+            course = AddOnCourse.objects.create(
+                name=f"Course {number}", description="Intro.", price=100
+            )
+            CoursePurchase.objects.create(student=self.student, course=course)
+
+        first = self.client.get(self.url)
+        last = self.client.get(self.url, {"page": 2})
+
+        self.assertEqual(len(first.context["purchases"]), 20)
+        self.assertEqual(first.context["purchases"][0].course.name, "Course 24")
+        self.assertEqual(len(last.context["purchases"]), 5)
+        self.assertContains(first, "?page=2")
+
+    def test_out_of_range_page_shows_the_last_page(self):
+        response = self.client.get(self.url, {"page": 99})
+        self.assertEqual(response.status_code, 200)
+
+    def test_dashboard_links_to_history(self):
+        response = self.client.get(reverse("principal:admin_dashboard"))
+        self.assertContains(response, f'href="{self.url}"')
+
+    def test_student_gets_403(self):
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+
+    def test_logged_out_visitor_is_redirected_to_landing(self):
+        self.client.logout()
+        self.assertRedirects(
+            self.client.get(self.url), "/", fetch_redirect_response=False
+        )
+
+
+class ListPerformanceTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.department = Department.objects.create(name="Commerce", description="x")
+        self.client.force_login(self.admin)
+        self.next_row = 0
+
+    def add_requests(self, count):
+        for _ in range(count):
+            self.next_row += 1
+            student = Student.objects.create_user(
+                f"student{self.next_row}",
+                f"student{self.next_row}@example.com",
+                dept=self.department,
+            )
+            course = AddOnCourse.objects.create(
+                name=f"Course {self.next_row}", description="Intro.", price=100
+            )
+            CoursePurchase.objects.create(student=student, course=course)
+
+    def query_count(self, url):
+        with CaptureQueriesContext(connection) as queries:
+            self.assertEqual(self.client.get(url).status_code, 200)
+        return len(queries)
+
+    def test_query_counts_do_not_grow_with_data(self):
+        urls = [
+            reverse("principal:admin_dashboard"),
+            reverse("principal:admin_enrollments"),
+            reverse("principal:admin_students"),
+        ]
+        self.add_requests(2)
+        before = {url: self.query_count(url) for url in urls}
+
+        self.add_requests(10)
+
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(self.query_count(url), before[url])
+
+
+class PaginationTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(self.admin)
+
+    def assert_paginated(self, url, context_name):
+        first = self.client.get(url)
+        second = self.client.get(url, {"page": 2})
+        self.assertEqual(len(first.context[context_name]), 20)
+        self.assertEqual(len(second.context[context_name]), 5)
+        self.assertContains(first, "?page=2")
+
+    def test_students_are_paginated(self):
+        for number in range(25):
+            Student.objects.create_user(f"s{number}", f"s{number}@example.com")
+        self.assert_paginated(reverse("principal:admin_students"), "students")
+
+    def test_departments_are_paginated(self):
+        for number in range(25):
+            Department.objects.create(name=f"Dept {number}", description="x")
+        self.assert_paginated(reverse("principal:admin_departments"), "departments")
+
+    def test_courses_are_paginated(self):
+        for number in range(25):
+            AddOnCourse.objects.create(
+                name=f"Course {number}", description="x", price=1
+            )
+        self.assert_paginated(reverse("principal:admin_courses"), "courses")
+
+    def test_pending_requests_are_paginated_and_the_total_stays_accurate(self):
+        student = Student.objects.create_user("asha", "asha@example.com")
+        for number in range(25):
+            course = AddOnCourse.objects.create(
+                name=f"Course {number}", description="x", price=1
+            )
+            CoursePurchase.objects.create(student=student, course=course)
+
+        response = self.client.get(reverse("principal:admin_dashboard"))
+
+        self.assertEqual(len(response.context["pending_purchases"]), 20)
+        self.assertEqual(response.context["pending_purchases"].paginator.count, 25)
+        self.assertContains(response, "?page=2")
