@@ -232,3 +232,46 @@ class AddStudentTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["form"].errors["password"])
         self.assertFalse(Student.objects.filter(username="ravi").exists())
+
+
+class CoursePriceTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        self.client.force_login(self.admin)
+
+    def payload(self, price):
+        return {
+            "name": "Data Basics",
+            "description": "Intro.",
+            "price": price,
+            "status": "active",
+        }
+
+    def test_negative_price_is_rejected_when_adding(self):
+        response = self.client.post(
+            reverse("principal:admin_add_course"), self.payload(-1)
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].errors["price"])
+        self.assertFalse(AddOnCourse.objects.filter(name="Data Basics").exists())
+
+    def test_negative_price_is_rejected_when_editing(self):
+        response = self.client.post(
+            reverse("principal:admin_edit_course", args=[self.course.id]),
+            self.payload(-1),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.course.refresh_from_db()
+        self.assertEqual(self.course.price, 2999)
+
+    def test_free_course_is_allowed(self):
+        response = self.client.post(
+            reverse("principal:admin_add_course"), self.payload(0)
+        )
+        self.assertRedirects(response, reverse("principal:admin_courses"))
+        self.assertEqual(AddOnCourse.objects.get(name="Data Basics").price, 0)

@@ -58,7 +58,7 @@ class StudentRegisterForm(UniqueEmailMixin, PasswordRulesMixin, forms.ModelForm)
             'username':forms.TextInput(attrs={'class': 'form-control'}),
             'email':forms.EmailInput(attrs={'class': 'form-control'}),
             'phone':forms.TextInput(attrs={'class': 'form-control'}),
-            'dob':forms.DateInput(attrs={'class': 'form-control'}),
+            'dob':forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'dept':forms.Select(attrs={'class': 'form-control'}),
             'profile_pic':forms.FileInput(attrs=PHOTO_INPUT_ATTRS),
             'age':forms.NumberInput(attrs={'class': 'form-control'}),

@@ -13,6 +13,7 @@ class AdminStudentForm(UniqueEmailMixin, PasswordRulesMixin, forms.ModelForm):
             'username','email','phone','dob',
             'dept','age','rollno','password'
         ]
+        widgets = {'dob': forms.DateInput(attrs={'type': 'date'})}
 
     def clean(self):
         cleaned_data = super().clean()

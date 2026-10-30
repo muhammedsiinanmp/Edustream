@@ -2,6 +2,7 @@ import os
 import re
 import smtplib
 import tempfile
+from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
 from unittest import mock
@@ -14,6 +15,7 @@ from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from PIL import Image
 
 from principal.models import AddOnCourse
@@ -620,6 +622,96 @@ class RegistrationTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Student.objects.exists())
+
+
+class ProfileFieldValidationTests(TestCase):
+    def setUp(self):
+        self.tomorrow = (timezone.localdate() + timedelta(days=1)).isoformat()
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+
+    def register(self, **fields):
+        return self.client.post(
+            reverse("student:register"),
+            {
+                "username": "ravi",
+                "email": "ravi@example.com",
+                "password": "Sturdy-pass-7395",
+                "confirm_password": "Sturdy-pass-7395",
+                **fields,
+            },
+        )
+
+    def test_registration_rejects_invalid_fields(self):
+        cases = [
+            ("dob", self.tomorrow),
+            ("dob", "not-a-date"),
+            ("age", "-1"),
+            ("age", "0"),
+            ("age", "121"),
+            ("phone", "call me"),
+            ("phone", "12345"),
+            ("phone", "98765-43210"),
+        ]
+        for field, value in cases:
+            with self.subTest(field=field, value=value):
+                response = self.register(**{field: value})
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.context["form"].errors[field])
+                self.assertFalse(Student.objects.filter(username="ravi").exists())
+
+    def test_registration_accepts_valid_fields(self):
+        response = self.register(
+            dob=timezone.localdate().isoformat(), age="19", phone="+919876543210"
+        )
+        self.assertRedirects(response, reverse("student:login"))
+        student = Student.objects.get(username="ravi")
+        self.assertEqual(student.dob, timezone.localdate())
+        self.assertEqual(student.age, 19)
+        self.assertEqual(student.phone, "+919876543210")
+
+    def test_registration_shows_a_date_picker_for_dob(self):
+        response = self.client.get(reverse("student:register"))
+        self.assertContains(response, 'type="date" name="dob"')
+
+    def test_profile_edit_rejects_invalid_fields(self):
+        self.client.force_login(self.student)
+        for field, value in (
+            ("dob", self.tomorrow),
+            ("age", "-1"),
+            ("phone", "call me"),
+        ):
+            with self.subTest(field=field):
+                response = self.client.post(
+                    reverse("student:edit_profile"),
+                    {"email": "asha@example.com", field: value},
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.context["form"].errors[field])
+
+    def test_principal_add_student_rejects_invalid_fields(self):
+        admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(admin)
+        for field, value in (
+            ("dob", self.tomorrow),
+            ("age", "-1"),
+            ("phone", "call me"),
+        ):
+            with self.subTest(field=field):
+                response = self.client.post(
+                    reverse("principal:admin_add_student"),
+                    {
+                        "username": "ravi",
+                        "email": "ravi@example.com",
+                        "password": "Sturdy-pass-7395",
+                        field: value,
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.context["form"].errors[field])
 
 
 class EmailFailureTests(TestCase):

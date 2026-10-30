@@ -1,21 +1,26 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db.models.functions import Lower
 from principal.models import Department
 from .photos import reencode_profile_photo, validate_profile_photo
+from .validators import validate_not_future, validate_phone
 
 # Create your models here.
 
 class Student(AbstractUser):
     email = models.EmailField(unique=True)
-    phone = models.CharField(max_length=15,blank=True)
-    dob = models.DateField(null= True,blank=True)
+    phone = models.CharField(max_length=15,blank=True,validators=[validate_phone])
+    dob = models.DateField(null= True,blank=True,validators=[validate_not_future])
     dept = models.ForeignKey(Department,on_delete=models.SET_NULL,null=True,blank=True)
     profile_pic = models.ImageField(
         upload_to='profiles/',null=True,blank=True,
         validators=[validate_profile_photo],
     )
-    age = models.IntegerField(null=True,blank=True)
+    age = models.IntegerField(
+        null=True,blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(120)],
+    )
     year_of_admission = models.IntegerField(null=True,blank=True)
     rollno = models.IntegerField(unique=True,null=True,blank=True)
 
