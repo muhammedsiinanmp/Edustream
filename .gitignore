@@ -4,3 +4,8 @@ __pycache__/
 db.sqlite3
 media/
 staticfiles/
+.DS_Store
+.venv
+.coverage
+.env.*
+!.env.example

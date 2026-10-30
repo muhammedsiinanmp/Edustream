@@ -110,7 +110,7 @@ def admin_edit_department(request, id):
         messages.success(request, "Department updated successfully")
         return redirect("principal:admin_departments")
 
-    return render(request, "principal/edit_department.html", {"form": form})
+    return render(request, "principal/edit_departments.html", {"form": form})
 
 
 @require_POST
