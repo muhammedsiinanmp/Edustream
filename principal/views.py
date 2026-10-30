@@ -14,7 +14,7 @@ from .utils import is_admin
 
 
 # ADMIN DASHBOARD
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_dashboard(request):
     pending_purchases = CoursePurchase.objects.filter(status="pending")
@@ -29,14 +29,14 @@ def admin_dashboard(request):
 
 
 # STUDENT CRUD
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_students(request):
     students = Student.objects.filter(is_staff=False)
     return render(request, "principal/students.html", {"students": students})
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_add_student(request):
     if request.method == "POST":
@@ -51,7 +51,7 @@ def admin_add_student(request):
     return render(request, "principal/add_student.html", {"form": form})
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_edit_student(request, id):
     student = get_object_or_404(Student, id=id, is_staff=False)
@@ -69,7 +69,7 @@ def admin_edit_student(request, id):
 
 
 @require_POST
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_delete_student(request, id):
     student = get_object_or_404(Student, id=id, is_staff=False)
@@ -79,14 +79,14 @@ def admin_delete_student(request, id):
 
 
 # DEPARTMENT CRUD
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_departments(request):
     departments = Department.objects.all()
     return render(request, "principal/departments.html", {"departments": departments})
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_add_department(request):
     form = DepartmentForm(request.POST or None)
@@ -99,7 +99,7 @@ def admin_add_department(request):
     return render(request, "principal/add_department.html", {"form": form})
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_edit_department(request, id):
     dept = get_object_or_404(Department, id=id)
@@ -114,7 +114,7 @@ def admin_edit_department(request, id):
 
 
 @require_POST
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_delete_department(request, id):
     dept = get_object_or_404(Department, id=id)
@@ -124,14 +124,14 @@ def admin_delete_department(request, id):
 
 
 # COURSE CRUD
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_courses(request):
     courses = AddOnCourse.objects.all()
     return render(request, "principal/courses.html", {"courses": courses})
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_add_course(request):
     form = AddOnCourseForm(request.POST or None)
@@ -144,7 +144,7 @@ def admin_add_course(request):
     return render(request, "principal/add_course.html", {"form": form})
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_edit_course(request, id):
     course = get_object_or_404(AddOnCourse, id=id)
@@ -159,7 +159,7 @@ def admin_edit_course(request, id):
 
 
 @require_POST
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_delete_course(request, id):
     course = get_object_or_404(AddOnCourse, id=id)
@@ -170,7 +170,7 @@ def admin_delete_course(request, id):
 
 # COURSE APPROVAL FLOW
 @require_POST
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def approve_course(request, purchase_id):
     purchase = get_object_or_404(CoursePurchase, id=purchase_id)
@@ -184,7 +184,7 @@ def approve_course(request, purchase_id):
 
 
 @require_POST
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def reject_course(request, purchase_id):
     purchase = get_object_or_404(CoursePurchase, id=purchase_id)

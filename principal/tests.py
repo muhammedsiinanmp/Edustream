@@ -1,7 +1,9 @@
-from django.test import Client, TestCase
+from django.contrib.auth.models import AnonymousUser
+from django.test import Client, RequestFactory, TestCase
 from django.urls import reverse
 
 from principal.models import AddOnCourse, Department
+from principal.views import admin_dashboard
 from student.models import CoursePurchase, Student
 
 
@@ -99,13 +101,39 @@ class PageSmokeTests(TestCase):
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 200)
 
-    def test_student_is_redirected_to_default_login_url(self):
+    def test_student_gets_403_on_principal_pages(self):
         self.client.force_login(self.student)
         for url in self.urls:
             with self.subTest(url=url):
-                response = self.client.get(url)
-                self.assertEqual(response.status_code, 302)
-                self.assertTrue(response.url.startswith("/accounts/login/"))
+                self.assertEqual(self.client.get(url).status_code, 403)
+
+    def test_student_gets_403_on_principal_actions(self):
+        self.client.force_login(self.student)
+        purchase = CoursePurchase.objects.create(
+            student=self.student, course=self.course
+        )
+        urls = [
+            reverse("principal:approve_course", args=[purchase.id]),
+            reverse("principal:reject_course", args=[purchase.id]),
+            reverse("principal:admin_delete_course", args=[self.course.id]),
+            reverse("principal:admin_delete_department", args=[self.department.id]),
+            reverse("principal:admin_delete_student", args=[self.student.id]),
+        ]
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertEqual(self.client.post(url).status_code, 403)
+        purchase.refresh_from_db()
+        self.assertEqual(purchase.status, "pending")
+        self.assertTrue(Student.objects.filter(id=self.student.id).exists())
+
+    def test_login_redirect_uses_the_real_login_page(self):
+        # PublicAccessMiddleware sends anonymous browsers to the landing page
+        # first, so this checks the view's own redirect target directly.
+        request = RequestFactory().get(reverse("principal:admin_dashboard"))
+        request.user = AnonymousUser()
+        response = admin_dashboard(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.startswith(reverse("student:login")))
 
     def test_logged_out_visitor_is_redirected_to_landing(self):
         for url in self.urls:
