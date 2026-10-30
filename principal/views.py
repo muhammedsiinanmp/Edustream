@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
+from django.views.decorators.http import require_POST
 from student.models import Student, CoursePurchase
 from .models import Department, AddOnCourse
 from .forms import (
@@ -67,6 +68,7 @@ def admin_edit_student(request, id):
     return render(request, "principal/edit_student.html", {"form": form})
 
 
+@require_POST
 @login_required(login_url="login")
 @user_passes_test(is_admin)
 def admin_delete_student(request, id):
@@ -111,6 +113,7 @@ def admin_edit_department(request, id):
     return render(request, "principal/edit_department.html", {"form": form})
 
 
+@require_POST
 @login_required(login_url="login")
 @user_passes_test(is_admin)
 def admin_delete_department(request, id):
@@ -155,6 +158,7 @@ def admin_edit_course(request, id):
     return render(request, "principal/edit_course.html", {"form": form})
 
 
+@require_POST
 @login_required(login_url="login")
 @user_passes_test(is_admin)
 def admin_delete_course(request, id):
@@ -165,6 +169,7 @@ def admin_delete_course(request, id):
 
 
 # COURSE APPROVAL FLOW
+@require_POST
 @login_required(login_url="login")
 @user_passes_test(is_admin)
 def approve_course(request, purchase_id):
@@ -178,6 +183,7 @@ def approve_course(request, purchase_id):
     return redirect("principal:admin_dashboard")
 
 
+@require_POST
 @login_required(login_url="login")
 @user_passes_test(is_admin)
 def reject_course(request, purchase_id):

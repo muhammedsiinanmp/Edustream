@@ -11,6 +11,7 @@ A role-based learning management system built with Django and PostgreSQL. Studen
 - Browse active add-on courses and request enrollment
 - Track each course as pending, approved, rejected or completed
 - View and edit their profile, including a photo
+- Reset a forgotten password by email
 
 **Principal**
 - See totals and pending requests on a dashboard
@@ -34,6 +35,7 @@ A database constraint allows one request per student and course, so duplicates c
 - A custom `Student` model extends Django's `AbstractUser`.
 - `PublicAccessMiddleware` redirects logged-out visitors from every page except the public ones.
 - Admin views require a logged-in staff user, and login redirects each user by role.
+- Actions that change data accept POST only and are protected by Django's CSRF checks.
 
 ## Tech stack
 
@@ -79,6 +81,14 @@ python manage.py runserver
 ```
 
 Open http://localhost:8000. Log in with the superuser account to reach the principal dashboard.
+
+## Tests
+
+```bash
+python manage.py test
+```
+
+The suite covers the password reset flow, enrollment rules, role checks and CSRF protection.
 
 ## License
 

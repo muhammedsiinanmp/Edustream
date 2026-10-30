@@ -13,6 +13,8 @@ class PublicAccessMiddleware:
             '/static/',
             '/media/',
             '/admin/',
+            '/student/password-reset/',
+            '/student/reset/',
         ]
 
     def __call__(self, request):

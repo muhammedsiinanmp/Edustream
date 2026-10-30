@@ -38,11 +38,8 @@
              class="btn btn-sm btn-warning me-1">
             Edit
           </a>
-          <a href="{% url 'principal:admin_delete_student' student.id %}"
-             class="btn btn-sm btn-danger"
-             onclick="return confirm('Delete this student?')">
-            Delete
-          </a>
+          <form method="post" action="{% url 'principal:admin_delete_student' student.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger"
+             onclick="return confirm('Delete this student?')">Delete</button></form>
         </td>
       </tr>
       {% empty %}

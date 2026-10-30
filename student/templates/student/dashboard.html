@@ -120,9 +120,7 @@
                     <span class="badge rounded-pill bg-success mb-2">
                         Enrolled
                     </span>
-                    <a href="{% url 'student:complete_course' p.id %}" class="btn btn-success btn-sm w-100">
-                        Mark as Completed
-                    </a>
+                    <form method="post" action="{% url 'student:complete_course' p.id %}">{% csrf_token %}<button type="submit" class="btn btn-success btn-sm w-100">Mark as Completed</button></form>
 
                     {% elif p.status == 'completed' %}
                     <span class="badge rounded-pill bg-primary mb-2">
@@ -148,9 +146,7 @@
                     <span class="badge rounded-pill bg-secondary mb-2">
                         Not Enrolled
                     </span>
-                    <a href="{% url 'student:purchase_course' course.id %}" class="btn btn-primary btn-sm w-100">
-                        Enroll in Course
-                    </a>
+                    <form method="post" action="{% url 'student:purchase_course' course.id %}">{% csrf_token %}<button type="submit" class="btn btn-primary btn-sm w-100">Enroll in Course</button></form>
                     {% endif %}
 
                 </div>

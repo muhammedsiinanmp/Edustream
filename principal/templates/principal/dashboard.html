@@ -182,12 +182,8 @@
                 </span>
               </td>
               <td class="text-end">
-                <a href="{% url 'principal:approve_course' p.id %}" class="btn btn-sm btn-success me-1">
-                  Approve
-                </a>
-                <a href="{% url 'principal:reject_course' p.id %}" class="btn btn-sm btn-outline-danger">
-                  Reject
-                </a>
+                <form method="post" action="{% url 'principal:approve_course' p.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-success me-1">Approve</button></form>
+                <form method="post" action="{% url 'principal:reject_course' p.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-danger">Reject</button></form>
               </td>
             </tr>
             {% endfor %}

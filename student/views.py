@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
 from .forms import StudentRegisterForm, LoginForm,StudentProfileUpdateForm
 from .models import CoursePurchase
 from principal.models import AddOnCourse
@@ -98,6 +99,7 @@ def student_dashboard(request):
 
 # PURCHASE COURSE (REQUEST)
 
+@require_POST
 @login_required(login_url="student:login")
 def purchase_course(request, course_id):
     course = get_object_or_404(AddOnCourse, id=course_id)
@@ -115,6 +117,7 @@ def purchase_course(request, course_id):
 
 # COMPLETE COURSE
 
+@require_POST
 @login_required(login_url="student:login")
 def complete_course(request, purchase_id):
     purchase = get_object_or_404(CoursePurchase, id=purchase_id, student=request.user)
