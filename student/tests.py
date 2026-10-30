@@ -99,6 +99,41 @@ class PasswordResetTests(TestCase):
         self.assertContains(reused, "expired")
 
 
+class NavbarTests(TestCase):
+    BRAND = '<a class="navbar-brand" href="{}">Edustream</a>'
+
+    def setUp(self):
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+
+    def test_base_template_has_a_viewport_tag(self):
+        response = self.client.get(reverse("student:login"))
+        self.assertContains(response, '<meta name="viewport"')
+
+    def test_logged_out_brand_goes_to_the_landing_page(self):
+        response = self.client.get(reverse("student:login"))
+        self.assertContains(response, self.BRAND.format("/"))
+        self.assertNotContains(response, ">Dashboard<")
+
+    def test_student_links_go_to_the_student_dashboard(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("student:student_profile"))
+        url = reverse("student:student_dashboard")
+        self.assertContains(response, self.BRAND.format(url))
+        self.assertContains(response, f'href="{url}" class="nav-dashboard')
+
+    def test_staff_links_go_to_the_principal_dashboard(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("principal:admin_students"))
+        url = reverse("principal:admin_dashboard")
+        self.assertContains(response, self.BRAND.format(url))
+        self.assertContains(response, f'href="{url}" class="nav-dashboard')
+
+
 class PasswordChangeTests(TestCase):
     def setUp(self):
         self.student = Student.objects.create_user(
