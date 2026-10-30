@@ -15,6 +15,23 @@ urlpatterns = [
     path("purchase/<int:course_id>/", views.purchase_course, name="purchase_course"),
     path("complete/<int:purchase_id>/", views.complete_course, name="complete_course"),
 
+    # 🔐 PASSWORD CHANGE
+    path(
+        "password-change/",
+        auth_views.PasswordChangeView.as_view(
+            template_name="password_change.html",
+            success_url=reverse_lazy("student:password_change_done"),
+        ),
+        name="password_change",
+    ),
+    path(
+        "password-change/done/",
+        auth_views.PasswordChangeDoneView.as_view(
+            template_name="password_change_done.html"
+        ),
+        name="password_change_done",
+    ),
+
     # 🔐 PASSWORD RESET
     path(
         "password-reset/",

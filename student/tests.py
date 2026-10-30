@@ -99,6 +99,54 @@ class PasswordResetTests(TestCase):
         self.assertContains(reused, "expired")
 
 
+class PasswordChangeTests(TestCase):
+    def setUp(self):
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Old-pass-4821"
+        )
+        self.url = reverse("student:password_change")
+        self.client.force_login(self.student)
+
+    def change(self, old="Old-pass-4821", new="New-pass-7395"):
+        return self.client.post(
+            self.url,
+            {"old_password": old, "new_password1": new, "new_password2": new},
+        )
+
+    def test_change_keeps_the_session_and_replaces_the_password(self):
+        response = self.change()
+
+        self.assertRedirects(response, reverse("student:password_change_done"))
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.check_password("New-pass-7395"))
+        dashboard = self.client.get(reverse("student:student_dashboard"))
+        self.assertEqual(dashboard.status_code, 200)
+
+    def test_wrong_current_password_is_rejected(self):
+        response = self.change(old="Wrong-pass-0000")
+        self.assertEqual(response.status_code, 200)
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.check_password("Old-pass-4821"))
+
+    def test_weak_new_password_is_rejected(self):
+        response = self.change(new="12345")
+        self.assertEqual(response.status_code, 200)
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.check_password("Old-pass-4821"))
+
+    def test_logged_out_visitor_is_redirected_to_landing(self):
+        self.client.logout()
+        for url in (self.url, reverse("student:password_change_done")):
+            with self.subTest(url=url):
+                self.assertRedirects(
+                    self.client.get(url), "/", fetch_redirect_response=False
+                )
+
+    def test_navbar_links_to_the_page(self):
+        response = self.client.get(reverse("student:student_dashboard"))
+        self.assertContains(response, f'href="{self.url}"')
+
+
 class EnrollmentTests(TestCase):
     def setUp(self):
         self.student = Student.objects.create_user(

@@ -11,6 +11,7 @@
     <div>
         {% if user.is_authenticated %}
             <span class="text-white me-3">{{ user.username }}</span>
+            <a href="{% url 'student:password_change' %}" class="btn btn-sm btn-outline-light me-2">Change Password</a>
             <form method="post" action="{% url 'student:logout' %}" class="d-inline">
                 {% csrf_token %}
                 <button type="submit" class="btn btn-sm btn-danger">Logout</button>
