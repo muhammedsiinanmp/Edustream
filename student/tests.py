@@ -1,3 +1,4 @@
+import os
 import re
 import tempfile
 from io import BytesIO
@@ -11,6 +12,14 @@ from PIL import Image
 
 from principal.models import AddOnCourse
 from student.models import CoursePurchase, Student
+
+UUID_PHOTO_NAME = re.compile(r"^profiles/[0-9a-f]{32}\.(jpg|png|webp)$")
+
+
+def photo_upload(name, image_format, size=(8, 6), mode="RGB", **save_options):
+    buffer = BytesIO()
+    Image.new(mode, size, "teal").save(buffer, format=image_format, **save_options)
+    return SimpleUploadedFile(name, buffer.getvalue())
 
 
 class LoginFormTests(TestCase):
@@ -176,6 +185,198 @@ class ProfilePhotoTests(TestCase):
         with Image.open(self.media_root / self.student.profile_pic.name) as stored:
             self.assertEqual(stored.format, "PNG")
             self.assertEqual(stored.size, (8, 6))
+
+    def upload(self, photo):
+        return self.client.post(
+            reverse("student:edit_profile"),
+            {"email": "asha@example.com", "profile_pic": photo},
+        )
+
+    def assert_rejected(self, response):
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].errors["profile_pic"])
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.profile_pic)
+        self.assertEqual(list(self.media_root.rglob("*.*")), [])
+
+    def test_stored_filename_is_a_uuid_and_keeps_nothing_from_the_upload(self):
+        self.upload(photo_upload("../my passport scan.PNG", "PNG"))
+        self.student.refresh_from_db()
+        self.assertRegex(self.student.profile_pic.name, UUID_PHOTO_NAME)
+        self.assertTrue(self.student.profile_pic.name.endswith(".png"))
+
+    def test_every_allowed_format_is_stored_in_that_format(self):
+        for name, image_format, extension in (
+            ("a.jpg", "JPEG", ".jpg"),
+            ("a.jpeg", "JPEG", ".jpg"),
+            ("a.png", "PNG", ".png"),
+            ("a.webp", "WEBP", ".webp"),
+        ):
+            with self.subTest(name=name):
+                self.upload(photo_upload(name, image_format))
+                self.student.refresh_from_db()
+                self.assertTrue(self.student.profile_pic.name.endswith(extension))
+                path = self.media_root / self.student.profile_pic.name
+                with Image.open(path) as stored:
+                    self.assertEqual(stored.format, image_format)
+
+    def test_exif_and_comments_are_removed_from_jpeg(self):
+        exif = Image.Exif()
+        exif[0x010F] = "SecretCameraMaker"
+        exif[0x0132] = "2024:01:01 10:00:00"
+        self.upload(
+            photo_upload("a.jpg", "JPEG", exif=exif, comment=b"SecretComment")
+        )
+
+        self.student.refresh_from_db()
+        path = self.media_root / self.student.profile_pic.name
+        self.assertNotIn(b"SecretCameraMaker", path.read_bytes())
+        self.assertNotIn(b"SecretComment", path.read_bytes())
+        with Image.open(path) as stored:
+            self.assertEqual(len(stored.getexif()), 0)
+            self.assertNotIn("comment", stored.info)
+
+    def test_exif_is_removed_from_png_and_webp(self):
+        exif = Image.Exif()
+        exif[0x010F] = "SecretCameraMaker"
+        for name, image_format in (("a.png", "PNG"), ("a.webp", "WEBP")):
+            with self.subTest(name=name):
+                self.upload(photo_upload(name, image_format, exif=exif))
+                self.student.refresh_from_db()
+                path = self.media_root / self.student.profile_pic.name
+                self.assertNotIn(b"SecretCameraMaker", path.read_bytes())
+
+    def test_exif_rotation_is_applied_before_it_is_stripped(self):
+        exif = Image.Exif()
+        exif[0x0112] = 6  # rotate 90 degrees to display upright
+        self.upload(photo_upload("a.jpg", "JPEG", size=(40, 20), exif=exif))
+
+        self.student.refresh_from_db()
+        with Image.open(self.media_root / self.student.profile_pic.name) as stored:
+            self.assertEqual(stored.size, (20, 40))
+
+    def test_transparency_survives_reencoding(self):
+        self.upload(photo_upload("a.png", "PNG", mode="RGBA"))
+        self.student.refresh_from_db()
+        with Image.open(self.media_root / self.student.profile_pic.name) as stored:
+            self.assertEqual(stored.mode, "RGBA")
+
+    def test_disallowed_format_is_rejected(self):
+        self.assert_rejected(self.upload(photo_upload("a.gif", "GIF")))
+
+    def test_disallowed_format_with_allowed_extension_is_rejected(self):
+        self.assert_rejected(self.upload(photo_upload("a.png", "GIF")))
+
+    def test_allowed_format_with_disallowed_extension_is_rejected(self):
+        self.assert_rejected(self.upload(photo_upload("a.bmp", "PNG")))
+
+    def test_non_image_with_allowed_extension_is_rejected(self):
+        fake = SimpleUploadedFile("a.png", b"<script>alert(1)</script>")
+        self.assert_rejected(self.upload(fake))
+
+    def test_truncated_image_is_rejected_without_a_server_error(self):
+        whole = photo_upload("a.jpg", "JPEG", size=(300, 300)).read()
+        truncated = SimpleUploadedFile("a.jpg", whole[: len(whole) // 2])
+        self.assert_rejected(self.upload(truncated))
+
+    def test_photo_over_two_megabytes_is_rejected(self):
+        noise = Image.frombytes("RGB", (900, 900), os.urandom(900 * 900 * 3))
+        buffer = BytesIO()
+        noise.save(buffer, format="PNG")
+        self.assertGreater(len(buffer.getvalue()), 2 * 1024 * 1024)
+        big = SimpleUploadedFile("a.png", buffer.getvalue())
+        self.assert_rejected(self.upload(big))
+
+    def test_image_with_excessive_pixel_count_is_rejected(self):
+        small_file = photo_upload("a.png", "PNG", size=(6000, 6000), mode="1")
+        self.assertLess(small_file.size, 2 * 1024 * 1024)
+        self.assert_rejected(self.upload(small_file))
+
+    def test_registration_applies_the_same_rules(self):
+        self.client.logout()
+        data = {
+            "username": "ravi",
+            "email": "ravi@example.com",
+            "password": "Sturdy-pass-7395",
+            "confirm_password": "Sturdy-pass-7395",
+        }
+
+        rejected = self.client.post(
+            reverse("student:register"),
+            {**data, "profile_pic": photo_upload("a.png", "GIF")},
+        )
+        self.assertEqual(rejected.status_code, 200)
+        self.assertFalse(Student.objects.filter(username="ravi").exists())
+
+        self.client.post(
+            reverse("student:register"),
+            {**data, "profile_pic": photo_upload("a.png", "PNG")},
+        )
+        student = Student.objects.get(username="ravi")
+        self.assertRegex(student.profile_pic.name, UUID_PHOTO_NAME)
+
+    def test_django_admin_applies_the_same_rules(self):
+        admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(admin)
+        url = reverse("admin:student_student_change", args=[self.student.id])
+        data = {
+            "username": "asha",
+            "email": "asha@example.com",
+            "date_joined_0": "2026-01-01",
+            "date_joined_1": "10:00:00",
+        }
+
+        rejected = self.client.post(
+            url, {**data, "profile_pic": photo_upload("a.png", "GIF")}
+        )
+        self.assertEqual(rejected.status_code, 200)
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.profile_pic)
+
+        accepted = self.client.post(
+            url, {**data, "profile_pic": photo_upload("a.png", "PNG")}
+        )
+        self.assertEqual(accepted.status_code, 302)
+        self.student.refresh_from_db()
+        self.assertRegex(self.student.profile_pic.name, UUID_PHOTO_NAME)
+
+    def test_unrelated_profile_save_leaves_the_stored_photo_untouched(self):
+        self.upload(photo_upload("a.jpg", "JPEG", size=(64, 64)))
+        self.student.refresh_from_db()
+        name = self.student.profile_pic.name
+        path = self.media_root / name
+        original = path.read_bytes()
+
+        response = self.client.post(
+            reverse("student:edit_profile"),
+            {"email": "asha@example.com", "phone": "9876543210"},
+        )
+
+        self.assertRedirects(response, reverse("student:student_profile"))
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.phone, "9876543210")
+        self.assertEqual(self.student.profile_pic.name, name)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(len(list(self.media_root.rglob("*.*"))), 1)
+
+    def test_unrelated_save_tolerates_a_legacy_photo_that_breaks_the_rules(self):
+        legacy = self.media_root / "profiles" / "legacy.gif"
+        legacy.parent.mkdir()
+        legacy.write_bytes(photo_upload("a.gif", "GIF").read())
+        Student.objects.filter(id=self.student.id).update(
+            profile_pic="profiles/legacy.gif"
+        )
+
+        response = self.client.post(
+            reverse("student:edit_profile"),
+            {"email": "asha@example.com", "phone": "9876543210"},
+        )
+
+        self.assertRedirects(response, reverse("student:student_profile"))
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.profile_pic.name, "profiles/legacy.gif")
 
 
 class StudentAdminTests(TestCase):

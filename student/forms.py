@@ -5,6 +5,11 @@ from django.contrib.auth.forms import UserChangeForm
 from django.contrib.auth.password_validation import validate_password
 from .models import Student
 
+PHOTO_INPUT_ATTRS = {
+    'class': 'form-control',
+    'accept': 'image/jpeg,image/png,image/webp',
+}
+
 
 class PasswordRulesMixin:
     """Applies AUTH_PASSWORD_VALIDATORS to a form's `password` field."""
@@ -44,7 +49,7 @@ class StudentRegisterForm(PasswordRulesMixin, forms.ModelForm):
             'phone':forms.TextInput(attrs={'class': 'form-control'}),
             'dob':forms.DateInput(attrs={'class': 'form-control'}),
             'dept':forms.Select(attrs={'class': 'form-control'}),
-            'profile_pic':forms.FileInput(attrs={'class': 'form-control'}),
+            'profile_pic':forms.FileInput(attrs=PHOTO_INPUT_ATTRS),
             'age':forms.NumberInput(attrs={'class': 'form-control'}),
         }
 
@@ -96,5 +101,5 @@ class StudentProfileUpdateForm(UserChangeForm):
             'dob': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'age': forms.NumberInput(attrs={'class': 'form-control'}),
             'dept': forms.Select(attrs={'class': 'form-select'}),
-            'profile_pic': forms.FileInput(attrs={'class': 'form-control'}),
+            'profile_pic': forms.FileInput(attrs=PHOTO_INPUT_ATTRS),
         }
