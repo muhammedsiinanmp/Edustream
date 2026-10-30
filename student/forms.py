@@ -2,9 +2,28 @@ from django import forms
 from django.contrib.auth.hashers import make_password
 from django.core.exceptions import ValidationError
 from django.contrib.auth.forms import UserChangeForm
+from django.contrib.auth.password_validation import validate_password
 from .models import Student
 
-class StudentRegisterForm(forms.ModelForm):
+
+class PasswordRulesMixin:
+    """Applies AUTH_PASSWORD_VALIDATORS to a form's `password` field."""
+
+    def check_password_rules(self, cleaned_data):
+        password = cleaned_data.get('password')
+        if not password:
+            return
+        candidate = Student(
+            username=cleaned_data.get('username', ''),
+            email=cleaned_data.get('email', ''),
+        )
+        try:
+            validate_password(password, candidate)
+        except ValidationError as error:
+            self.add_error('password', error)
+
+
+class StudentRegisterForm(PasswordRulesMixin, forms.ModelForm):
     password = forms.CharField(
         widget=forms.PasswordInput(attrs={'class':'form_control'})
     )
@@ -39,6 +58,7 @@ class StudentRegisterForm(forms.ModelForm):
         cleaned_data = super().clean()
         if cleaned_data.get('password') != cleaned_data.get('confirm_password'):
             raise ValidationError('Passwords does not match')
+        self.check_password_rules(cleaned_data)
         return cleaned_data
     
     def save(self,commit=True):

@@ -211,3 +211,59 @@ class StudentAdminTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'name="password"')
+
+
+class RegistrationTests(TestCase):
+    def payload(self, **overrides):
+        data = {
+            "username": "ravi",
+            "email": "ravi@example.com",
+            "password": "Sturdy-pass-7395",
+            "confirm_password": "Sturdy-pass-7395",
+        }
+        data.update(overrides)
+        return data
+
+    def test_valid_registration_creates_student_who_can_log_in(self):
+        response = self.client.post(reverse("student:register"), self.payload())
+
+        self.assertRedirects(response, reverse("student:login"))
+        student = Student.objects.get(username="ravi")
+        self.assertFalse(student.is_staff)
+        self.assertTrue(student.check_password("Sturdy-pass-7395"))
+        self.assertEqual(mail.outbox[0].to, ["ravi@example.com"])
+
+        login = self.client.post(
+            reverse("student:login"),
+            {"username": "ravi", "password": "Sturdy-pass-7395"},
+        )
+        self.assertRedirects(login, reverse("student:student_dashboard"))
+
+    def test_weak_passwords_are_rejected(self):
+        weak_passwords = {
+            "too short": "Ab1!",
+            "common": "password123",
+            "numeric": "8264917305",
+            "similar to username": "ravikumar1",
+        }
+        for reason, password in weak_passwords.items():
+            with self.subTest(reason=reason):
+                response = self.client.post(
+                    reverse("student:register"),
+                    self.payload(
+                        username="ravikumar",
+                        password=password,
+                        confirm_password=password,
+                    ),
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.context["form"].errors["password"])
+                self.assertFalse(Student.objects.exists())
+
+    def test_mismatched_passwords_are_rejected(self):
+        response = self.client.post(
+            reverse("student:register"),
+            self.payload(confirm_password="Different-pass-1"),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Student.objects.exists())

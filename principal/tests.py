@@ -173,3 +173,34 @@ class StaffAccountProtectionTests(TestCase):
                 )
                 self.assertEqual(response.status_code, 404)
                 self.assertTrue(Student.objects.filter(id=account.id).exists())
+
+
+class AddStudentTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(self.admin)
+
+    def test_valid_student_is_created_with_hashed_password(self):
+        response = self.client.post(
+            reverse("principal:admin_add_student"),
+            {
+                "username": "ravi",
+                "email": "ravi@example.com",
+                "password": "Sturdy-pass-7395",
+            },
+        )
+        self.assertRedirects(response, reverse("principal:admin_students"))
+        student = Student.objects.get(username="ravi")
+        self.assertFalse(student.is_staff)
+        self.assertTrue(student.check_password("Sturdy-pass-7395"))
+
+    def test_weak_password_is_rejected(self):
+        response = self.client.post(
+            reverse("principal:admin_add_student"),
+            {"username": "ravi", "email": "ravi@example.com", "password": "12345"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].errors["password"])
+        self.assertFalse(Student.objects.filter(username="ravi").exists())
