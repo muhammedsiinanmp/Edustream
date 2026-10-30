@@ -7,7 +7,10 @@ from unittest import mock
 
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import Client, TestCase, override_settings
+from django.core.management.base import CommandError
+from django.db import IntegrityError, connection, transaction
+from django.db.migrations.executor import MigrationExecutor
+from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
@@ -584,3 +587,164 @@ class RegistrationTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Student.objects.exists())
+
+
+class EmailNormalisationTests(TestCase):
+    def setUp(self):
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+
+    def registration(self, email):
+        return {
+            "username": "ravi",
+            "email": email,
+            "password": "Sturdy-pass-7395",
+            "confirm_password": "Sturdy-pass-7395",
+        }
+
+    def test_model_save_stores_lowercase(self):
+        student = Student.objects.create_user(
+            "ravi", "Ravi.Kumar@Example.COM", "Demo-pass-4821"
+        )
+        student.refresh_from_db()
+        self.assertEqual(student.email, "ravi.kumar@example.com")
+
+    def test_registration_stores_lowercase(self):
+        self.client.post(
+            reverse("student:register"), self.registration("Ravi@Example.COM")
+        )
+        self.assertEqual(
+            Student.objects.get(username="ravi").email, "ravi@example.com"
+        )
+
+    def test_registration_rejects_case_only_duplicate(self):
+        response = self.client.post(
+            reverse("student:register"), self.registration("ASHA@example.com")
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].errors["email"])
+        self.assertFalse(Student.objects.filter(username="ravi").exists())
+
+    def test_profile_edit_rejects_another_students_email_in_any_case(self):
+        other = Student.objects.create_user(
+            "ravi", "ravi@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(other)
+        response = self.client.post(
+            reverse("student:edit_profile"), {"email": "ASHA@EXAMPLE.COM"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].errors["email"])
+        other.refresh_from_db()
+        self.assertEqual(other.email, "ravi@example.com")
+
+    def test_profile_edit_accepts_own_email_in_another_case(self):
+        self.client.force_login(self.student)
+        response = self.client.post(
+            reverse("student:edit_profile"), {"email": "Asha@Example.com"}
+        )
+        self.assertRedirects(response, reverse("student:student_profile"))
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.email, "asha@example.com")
+
+    def test_principal_add_student_rejects_case_only_duplicate(self):
+        admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(admin)
+        response = self.client.post(
+            reverse("principal:admin_add_student"),
+            {
+                "username": "ravi",
+                "email": "ASHA@example.com",
+                "password": "Sturdy-pass-7395",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].errors["email"])
+
+    def test_django_admin_rejects_case_only_duplicate_without_a_server_error(self):
+        admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(admin)
+        response = self.client.post(
+            reverse("admin:student_student_add"),
+            {
+                "username": "ravi",
+                "email": "ASHA@example.com",
+                "usable_password": "true",
+                "password1": "Sturdy-pass-7395",
+                "password2": "Sturdy-pass-7395",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Student.objects.filter(username="ravi").exists())
+
+    def test_database_rejects_case_only_duplicate_written_around_the_model(self):
+        other = Student.objects.create_user(
+            "ravi", "ravi@example.com", "Demo-pass-4821"
+        )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Student.objects.filter(id=other.id).update(email="ASHA@EXAMPLE.COM")
+
+    def test_password_reset_finds_student_typing_a_different_case(self):
+        self.client.post(
+            reverse("student:password_reset"), {"email": "ASHA@Example.com"}
+        )
+        self.assertEqual(len(mail.outbox), 1)
+
+
+class EmailMigrationTests(TransactionTestCase):
+    before = [("student", "0002_validate_profile_photo")]
+    after = [("student", "0003_lowercase_unique_email")]
+
+    def setUp(self):
+        self.addCleanup(self.migrate_to_latest)
+        self.old_student = self.migrate(self.before).apps.get_model(
+            "student", "Student"
+        )
+
+    def migrate(self, targets):
+        executor = MigrationExecutor(connection)
+        executor.migrate(targets)
+        return MigrationExecutor(connection).loader.project_state(targets)
+
+    def migrate_to_latest(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
+
+    def test_existing_addresses_are_lowercased(self):
+        self.old_student.objects.create(username="asha", email="Asha@Example.COM")
+
+        self.migrate(self.after)
+
+        self.assertEqual(Student.objects.get(username="asha").email, "asha@example.com")
+
+    def test_case_only_duplicates_stop_the_migration_and_change_nothing(self):
+        first = self.old_student.objects.create(
+            username="asha", email="Asha@Example.com"
+        )
+        second = self.old_student.objects.create(
+            username="asha2", email="asha@example.COM"
+        )
+        self.old_student.objects.create(username="ravi", email="Ravi@Example.com")
+
+        with self.assertRaises(CommandError) as raised:
+            self.migrate(self.after)
+
+        message = str(raised.exception)
+        self.assertIn("asha@example.com", message)
+        self.assertIn(str(first.id), message)
+        self.assertIn(str(second.id), message)
+        self.assertIn("migrate", message)
+        self.assertEqual(
+            set(self.old_student.objects.values_list("email", flat=True)),
+            {"Asha@Example.com", "asha@example.COM", "Ravi@Example.com"},
+        )
+
+        # Following the message's instructions lets the migration finish.
+        second.delete()
+        self.migrate(self.after)
+        self.assertEqual(Student.objects.get(id=first.id).email, "asha@example.com")

@@ -28,7 +28,18 @@ class PasswordRulesMixin:
             self.add_error('password', error)
 
 
-class StudentRegisterForm(PasswordRulesMixin, forms.ModelForm):
+class UniqueEmailMixin:
+    """Lowercases `email` and rejects addresses taken in any letter case."""
+
+    def clean_email(self):
+        email = self.cleaned_data.get('email').lower()
+        others = Student.objects.exclude(pk=self.instance.pk)
+        if others.filter(email__iexact=email).exists():
+            raise ValidationError('Email already exists')
+        return email
+
+
+class StudentRegisterForm(UniqueEmailMixin, PasswordRulesMixin, forms.ModelForm):
     password = forms.CharField(
         widget=forms.PasswordInput(attrs={'class':'form_control'})
     )
@@ -53,12 +64,6 @@ class StudentRegisterForm(PasswordRulesMixin, forms.ModelForm):
             'age':forms.NumberInput(attrs={'class': 'form-control'}),
         }
 
-    def clean_email(self):
-        email = self.cleaned_data.get('email')
-        if Student.objects.filter(email = email).exists():
-            raise ValidationError('Email already exists')
-        return email
-    
     def clean(self):
         cleaned_data = super().clean()
         if cleaned_data.get('password') != cleaned_data.get('confirm_password'):
@@ -82,7 +87,7 @@ class LoginForm(forms.Form):
     )
 
 
-class StudentProfileUpdateForm(UserChangeForm):
+class StudentProfileUpdateForm(UniqueEmailMixin, UserChangeForm):
     password = None  # hide password field
 
     class Meta:

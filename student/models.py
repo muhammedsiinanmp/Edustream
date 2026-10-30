@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.db.models.functions import Lower
 from principal.models import Department
 from .photos import reencode_profile_photo, validate_profile_photo
 
@@ -18,10 +19,24 @@ class Student(AbstractUser):
     year_of_admission = models.IntegerField(null=True,blank=True)
     rollno = models.IntegerField(unique=True,null=True,blank=True)
 
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            models.UniqueConstraint(
+                Lower('email'),
+                name='student_email_ci_unique',
+                violation_error_message='Email already exists',
+            ),
+        ]
+
     def __str__(self):
         return self.username
 
+    def clean(self):
+        super().clean()
+        self.email = self.email.lower()
+
     def save(self, *args, **kwargs):
+        self.email = self.email.lower()
         # Only a new upload is uncommitted; a stored photo is left as it is.
         if self.profile_pic and not self.profile_pic._committed:
             name, content = reencode_profile_photo(self.profile_pic)

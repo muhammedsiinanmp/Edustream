@@ -1,10 +1,10 @@
 from django import forms 
-from student.forms import PasswordRulesMixin
+from student.forms import PasswordRulesMixin, UniqueEmailMixin
 from student.models import Student
 from .models import Department,AddOnCourse
 from django.contrib.auth.hashers import make_password
 
-class AdminStudentForm(PasswordRulesMixin, forms.ModelForm):
+class AdminStudentForm(UniqueEmailMixin, PasswordRulesMixin, forms.ModelForm):
     password= forms.CharField(widget=forms.PasswordInput)
 
     class Meta:
