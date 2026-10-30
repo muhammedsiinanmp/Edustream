@@ -131,6 +131,53 @@ class EnrollmentTests(TestCase):
         self.assertEqual(purchase.status, "completed")
 
 
+class CourseCompletionTests(TestCase):
+    def setUp(self):
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        self.purchase = CoursePurchase.objects.create(
+            student=self.student, course=self.course, status="approved"
+        )
+        self.url = reverse("student:complete_course", args=[self.purchase.id])
+        self.client.force_login(self.student)
+
+    def dashboard(self):
+        return self.client.get(reverse("student:student_dashboard"))
+
+    def test_active_course_shows_one_completion_button(self):
+        self.assertContains(self.dashboard(), f'action="{self.url}"', count=1)
+
+    def test_deactivated_course_can_still_be_completed_from_the_dashboard(self):
+        self.course.status = "inactive"
+        self.course.save()
+
+        self.assertContains(self.dashboard(), f'action="{self.url}"', count=1)
+
+        self.client.post(self.url)
+        self.purchase.refresh_from_db()
+        self.assertEqual(self.purchase.status, "completed")
+
+    def test_no_completion_button_unless_approved(self):
+        for status in ("pending", "rejected", "completed"):
+            with self.subTest(status=status):
+                self.purchase.status = status
+                self.purchase.save()
+                self.assertNotContains(self.dashboard(), f'action="{self.url}"')
+
+    def test_other_students_purchase_cannot_be_completed(self):
+        other = Student.objects.create_user(
+            "ravi", "ravi@example.com", "Demo-pass-4821"
+        )
+        self.client.force_login(other)
+        self.assertEqual(self.client.post(self.url).status_code, 404)
+        self.purchase.refresh_from_db()
+        self.assertEqual(self.purchase.status, "approved")
+
+
 class PageSmokeTests(TestCase):
     def setUp(self):
         self.student = Student.objects.create_user(

@@ -120,7 +120,9 @@
                     <span class="badge rounded-pill bg-success mb-2">
                         Enrolled
                     </span>
-                    <form method="post" action="{% url 'student:complete_course' p.id %}">{% csrf_token %}<button type="submit" class="btn btn-success btn-sm w-100">Mark as Completed</button></form>
+                    <button class="btn btn-outline-success btn-sm w-100" disabled>
+                        Enrolled
+                    </button>
 
                     {% elif p.status == 'completed' %}
                     <span class="badge rounded-pill bg-primary mb-2">
@@ -174,6 +176,7 @@
                 <th>Description</th>
                 <th>Price</th>
                 <th>Status</th>
+                <th>Action</th>
             </tr>
         </thead>
 
@@ -195,7 +198,12 @@
                     {% elif p.status == 'rejected' %}
                     <span class="badge bg-danger">Rejected</span>
                     {% endif %}
-
+                </td>
+                <td>
+                    {% if p.status == 'approved' %}
+                    <form method="post" action="{% url 'student:complete_course' p.id %}">{% csrf_token %}<button type="submit" class="btn btn-success btn-sm">Mark as Completed</button></form>
+                    {% endif %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>
