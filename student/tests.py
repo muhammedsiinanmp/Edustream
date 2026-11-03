@@ -10,6 +10,7 @@ from unittest import mock
 from django.conf import settings
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.exceptions import ValidationError
 from django.core.management.base import CommandError
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
@@ -760,6 +761,59 @@ class ProfilePhotoTests(TestCase):
         self.assertRedirects(response, reverse("student:student_profile"))
         self.student.refresh_from_db()
         self.assertEqual(self.student.profile_pic.name, "profiles/legacy.gif")
+
+
+class UnvalidatedPhotoSaveTests(TestCase):
+    """Student.save() re-encodes new photos, even when no form validated them."""
+
+    def setUp(self):
+        media_root = tempfile.TemporaryDirectory()
+        self.addCleanup(media_root.cleanup)
+        self.media_root = Path(media_root.name)
+
+        media_override = override_settings(MEDIA_ROOT=media_root.name)
+        media_override.enable()
+        self.addCleanup(media_override.disable)
+
+    def save_with_photo(self, photo, username="asha"):
+        Student(
+            username=username, email=f"{username}@example.com", profile_pic=photo
+        ).save()
+
+    def oversized_file(self):
+        noise = Image.frombytes("RGB", (900, 900), os.urandom(900 * 900 * 3))
+        buffer = BytesIO()
+        noise.save(buffer, format="PNG")
+        self.assertGreater(len(buffer.getvalue()), 2 * 1024 * 1024)
+        return SimpleUploadedFile("a.png", buffer.getvalue())
+
+    def test_photo_breaking_the_rules_raises_validation_error_and_saves_nothing(self):
+        cases = {
+            "over 2 MB": self.oversized_file,
+            "over the pixel cap": lambda: photo_upload(
+                "a.png", "PNG", size=(6000, 6000), mode="1"
+            ),
+            # Past Pillow's own limit, Image.open raises DecompressionBombError.
+            "decompression bomb": lambda: photo_upload(
+                "a.png", "PNG", size=(15000, 15000), mode="1"
+            ),
+            "not an image": lambda: SimpleUploadedFile("a.png", b"not an image"),
+            "disallowed format": lambda: photo_upload("a.png", "GIF"),
+        }
+        for number, (label, make_photo) in enumerate(cases.items()):
+            with self.subTest(label):
+                username = f"student{number}"
+                with self.assertRaises(ValidationError):
+                    self.save_with_photo(make_photo(), username)
+                self.assertFalse(Student.objects.filter(username=username).exists())
+                self.assertEqual(list(self.media_root.rglob("*.*")), [])
+
+    def test_valid_photo_is_still_reencoded(self):
+        self.save_with_photo(photo_upload("../scan.png", "PNG"))
+        student = Student.objects.get(username="asha")
+        self.assertRegex(student.profile_pic.name, UUID_PHOTO_NAME)
+        with Image.open(self.media_root / student.profile_pic.name) as stored:
+            self.assertEqual(stored.format, "PNG")
 
 
 class StudentAdminTests(TestCase):

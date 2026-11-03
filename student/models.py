@@ -44,6 +44,9 @@ class Student(AbstractUser):
         self.email = self.email.lower()
         # Only a new upload is uncommitted; a stored photo is left as it is.
         if self.profile_pic and not self.profile_pic._committed:
+            # Forms have already run this, but code that skips validation
+            # gets a ValidationError here instead of a Pillow error.
+            validate_profile_photo(self.profile_pic)
             name, content = reencode_profile_photo(self.profile_pic)
             self.profile_pic.save(name, content, save=False)
         super().save(*args, **kwargs)
