@@ -12,6 +12,8 @@ urlpatterns = [
     path('students/add/', views.admin_add_student, name='admin_add_student'),
     path('students/edit/<int:id>/', views.admin_edit_student, name='admin_edit_student'),
     path('students/delete/<int:id>/', views.admin_delete_student, name='admin_delete_student'),
+    path('students/deactivate/<int:id>/', views.admin_deactivate_student, name='admin_deactivate_student'),
+    path('students/reactivate/<int:id>/', views.admin_reactivate_student, name='admin_reactivate_student'),
 
     # Department CRUD
     path('departments/', views.admin_departments, name='admin_departments'),

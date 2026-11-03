@@ -24,7 +24,12 @@
       {% for student in students %}
       <tr>
         <td>{{ student.rollno }}</td>
-        <td class="fw-semibold">{{ student.username }}</td>
+        <td class="fw-semibold">
+          {{ student.username }}
+          {% if not student.is_active %}
+            <span class="badge bg-secondary ms-1">Inactive</span>
+          {% endif %}
+        </td>
         <td>{{ student.email }}</td>
         <td>
           {% if student.dept %}
@@ -38,6 +43,12 @@
              class="btn btn-sm btn-warning me-1">
             Edit
           </a>
+          {% if student.is_active %}
+          <form method="post" action="{% url 'principal:admin_deactivate_student' student.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-secondary me-1"
+             onclick="return confirm('Deactivate this student? They will no longer be able to log in.')">Deactivate</button></form>
+          {% else %}
+          <form method="post" action="{% url 'principal:admin_reactivate_student' student.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-success me-1">Reactivate</button></form>
+          {% endif %}
           <form method="post" action="{% url 'principal:admin_delete_student' student.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger"
              onclick="return confirm('Delete this student?')">Delete</button></form>
         </td>

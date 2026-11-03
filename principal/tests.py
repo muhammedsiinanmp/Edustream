@@ -34,6 +34,8 @@ class AdminActionTests(TestCase):
             reverse("principal:approve_course", args=[self.purchase.id]),
             reverse("principal:reject_course", args=[self.purchase.id]),
             reverse("principal:admin_delete_student", args=[self.student.id]),
+            reverse("principal:admin_deactivate_student", args=[self.student.id]),
+            reverse("principal:admin_reactivate_student", args=[self.student.id]),
             reverse("principal:admin_delete_course", args=[self.course.id]),
             reverse("principal:admin_delete_department", args=[department.id]),
         ]
@@ -43,6 +45,8 @@ class AdminActionTests(TestCase):
         self.purchase.refresh_from_db()
         self.assertEqual(self.purchase.status, "pending")
         self.assertTrue(Student.objects.filter(id=self.student.id).exists())
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.is_active)
         self.assertTrue(AddOnCourse.objects.filter(id=self.course.id).exists())
         self.assertTrue(Department.objects.filter(id=department.id).exists())
 
@@ -123,6 +127,8 @@ class PageSmokeTests(TestCase):
             reverse("principal:admin_delete_course", args=[self.course.id]),
             reverse("principal:admin_delete_department", args=[self.department.id]),
             reverse("principal:admin_delete_student", args=[self.student.id]),
+            reverse("principal:admin_deactivate_student", args=[self.student.id]),
+            reverse("principal:admin_reactivate_student", args=[self.student.id]),
         ]
         for url in urls:
             with self.subTest(url=url):
@@ -130,6 +136,8 @@ class PageSmokeTests(TestCase):
         purchase.refresh_from_db()
         self.assertEqual(purchase.status, "pending")
         self.assertTrue(Student.objects.filter(id=self.student.id).exists())
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.is_active)
 
     def test_login_redirect_uses_the_real_login_page(self):
         # PublicAccessMiddleware sends anonymous browsers to the landing page
@@ -206,6 +214,26 @@ class StaffAccountProtectionTests(TestCase):
                 )
                 self.assertEqual(response.status_code, 404)
                 self.assertTrue(Student.objects.filter(id=account.id).exists())
+
+    def test_student_deactivate_does_not_lock_out_staff_accounts(self):
+        for account in (self.colleague, self.admin):
+            with self.subTest(account=account.username):
+                response = self.client.post(
+                    reverse("principal:admin_deactivate_student", args=[account.id])
+                )
+                self.assertEqual(response.status_code, 404)
+                account.refresh_from_db()
+                self.assertTrue(account.is_active)
+
+    def test_student_reactivate_does_not_touch_staff_accounts(self):
+        self.colleague.is_active = False
+        self.colleague.save()
+        response = self.client.post(
+            reverse("principal:admin_reactivate_student", args=[self.colleague.id])
+        )
+        self.assertEqual(response.status_code, 404)
+        self.colleague.refresh_from_db()
+        self.assertFalse(self.colleague.is_active)
 
 
 class AddStudentTests(TestCase):
@@ -572,6 +600,97 @@ class StudentCrudTests(TestCase):
         )
         self.assertRedirects(response, reverse("principal:admin_students"))
         self.assertFalse(Student.objects.filter(id=self.student.id).exists())
+
+
+class StudentDeactivationTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        self.purchase = CoursePurchase.objects.create(
+            student=self.student, course=self.course, status="completed"
+        )
+        self.deactivate_url = reverse(
+            "principal:admin_deactivate_student", args=[self.student.id]
+        )
+        self.reactivate_url = reverse(
+            "principal:admin_reactivate_student", args=[self.student.id]
+        )
+        self.client.force_login(self.admin)
+
+    def log_in_as_student(self, client):
+        return client.post(
+            reverse("student:login"),
+            {"username": "asha", "password": "Demo-pass-4821"},
+        )
+
+    def test_deactivated_student_cannot_log_in(self):
+        response = self.client.post(self.deactivate_url, follow=True)
+
+        self.assertRedirects(response, reverse("principal:admin_students"))
+        self.assertContains(response, "can no longer log in")
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.is_active)
+
+        visitor = Client()
+        self.assertContains(self.log_in_as_student(visitor), "Invalid credentials")
+        self.assertNotIn("_auth_user_id", visitor.session)
+
+    def test_deactivation_ends_a_session_that_is_already_open(self):
+        student_browser = Client()
+        student_browser.force_login(self.student)
+        dashboard = reverse("student:student_dashboard")
+        self.assertEqual(student_browser.get(dashboard).status_code, 200)
+
+        self.client.post(self.deactivate_url)
+
+        self.assertRedirects(
+            student_browser.get(dashboard), "/", fetch_redirect_response=False
+        )
+
+    def test_deactivated_student_stays_in_enrollment_history(self):
+        self.client.post(self.deactivate_url)
+
+        self.assertTrue(CoursePurchase.objects.filter(id=self.purchase.id).exists())
+        response = self.client.get(reverse("principal:admin_enrollments"))
+        self.assertContains(response, "asha")
+        self.assertContains(response, "Cloud Fundamentals")
+
+    def test_student_list_marks_inactive_students_and_offers_reactivation(self):
+        active = self.client.get(reverse("principal:admin_students"))
+        self.assertNotContains(active, "Inactive")
+        self.assertContains(active, f'action="{self.deactivate_url}"')
+        self.assertNotContains(active, f'action="{self.reactivate_url}"')
+
+        self.client.post(self.deactivate_url)
+
+        inactive = self.client.get(reverse("principal:admin_students"))
+        self.assertContains(inactive, "Inactive")
+        self.assertContains(inactive, f'action="{self.reactivate_url}"')
+        self.assertNotContains(inactive, f'action="{self.deactivate_url}"')
+
+    def test_reactivated_student_can_log_in_again(self):
+        self.client.post(self.deactivate_url)
+
+        response = self.client.post(self.reactivate_url, follow=True)
+
+        self.assertRedirects(response, reverse("principal:admin_students"))
+        self.assertContains(response, "can log in again")
+        self.assertRedirects(
+            self.log_in_as_student(Client()), reverse("student:student_dashboard")
+        )
+
+    def test_unknown_student_returns_404(self):
+        for name in ("admin_deactivate_student", "admin_reactivate_student"):
+            with self.subTest(name=name):
+                response = self.client.post(reverse(f"principal:{name}", args=[999999]))
+                self.assertEqual(response.status_code, 404)
 
 
 class DepartmentCrudTests(TestCase):
