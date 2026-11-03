@@ -117,6 +117,20 @@ class PageSmokeTests(TestCase):
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 403)
 
+    def test_student_on_a_principal_page_sees_the_styled_403_page(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("principal:admin_students"))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTemplateUsed(response, "403.html")
+        self.assertTemplateUsed(response, "base.html")
+        self.assertContains(response, "don't have permission", status_code=403)
+        self.assertContains(
+            response,
+            f'href="{reverse("student:student_dashboard")}"',
+            status_code=403,
+        )
+
     def test_student_gets_403_on_principal_actions(self):
         self.client.force_login(self.student)
         purchase = CoursePurchase.objects.create(
