@@ -5,9 +5,9 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from .forms import StudentRegisterForm, LoginForm,StudentProfileUpdateForm
 from .models import CoursePurchase
+from .notifications import notify
 from principal.models import AddOnCourse
-from django.core.mail import send_mail
-from django.conf import settings
+from principal.utils import paginate
 
 
 # STUDENT REGISTRATION
@@ -18,17 +18,13 @@ def register(request):
         if form.is_valid():
             student = form.save()
             
-            send_mail(
-                subject="Welcome to Edustream 🎓",
-                message=(
-                    f"Hi {student.username},\n\n"
-                    "Welcome to Edustream!\n\n"
-                    "Your account has been created successfully.\n\n"
-                    "— Edustream Team"
-                ),
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[student.email],
-                fail_silently=True, 
+            notify(
+                student,
+                "Welcome to Edustream 🎓",
+                f"Hi {student.username},\n\n"
+                "Welcome to Edustream!\n\n"
+                "Your account has been created successfully.\n\n"
+                "— Edustream Team",
             )
 
             messages.success(request, "Registration successful. Please login.")
@@ -67,6 +63,7 @@ def login_view(request):
 
 # LOGOUT
 
+@require_POST
 def logout_view(request):
     logout(request)
     messages.info(request, "Logged out successfully")
@@ -81,8 +78,8 @@ def student_dashboard(request):
     if request.user.is_staff:
         return redirect("principal:admin_dashboard")
 
-    courses = AddOnCourse.objects.filter(status="active")
-    purchases = CoursePurchase.objects.filter(student=request.user)
+    courses = paginate(request, AddOnCourse.objects.filter(status="active").order_by("id"))
+    purchases = CoursePurchase.objects.filter(student=request.user).select_related("course")
 
     purchased_course_ids = purchases.values_list("course_id", flat=True)
     completed_count = purchases.filter(status="completed").count()
@@ -102,16 +99,21 @@ def student_dashboard(request):
 @require_POST
 @login_required(login_url="student:login")
 def purchase_course(request, course_id):
-    course = get_object_or_404(AddOnCourse, id=course_id)
+    if request.user.is_staff:
+        messages.error(request, "Staff accounts cannot request courses")
+        return redirect("principal:admin_dashboard")
 
-    # Prevent duplicate purchase
-    if CoursePurchase.objects.filter(student=request.user, course=course).exists():
+    course = get_object_or_404(AddOnCourse, id=course_id, status="active")
+
+    # get_or_create also absorbs the IntegrityError from a simultaneous submit
+    _, created = CoursePurchase.objects.get_or_create(
+        student=request.user, course=course, defaults={"status": "pending"}
+    )
+
+    if created:
+        messages.success(request, "Course request submitted for approval")
+    else:
         messages.info(request, "You already requested this course")
-        return redirect("student:student_dashboard")
-
-    CoursePurchase.objects.create(student=request.user, course=course, status="pending")
-
-    messages.success(request, "Course request submitted for approval")
     return redirect("student:student_dashboard")
 
 

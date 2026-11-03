@@ -9,13 +9,15 @@ A role-based learning management system built with Django and PostgreSQL. Studen
 **Students**
 - Register with a department and profile details, and receive a welcome email
 - Browse active add-on courses and request enrollment
-- Track each course as pending, approved, rejected or completed
-- View and edit their profile, including a photo
-- Reset a forgotten password by email
+- Track each course as pending, approved, rejected or completed, and get an email when a request is approved or rejected
+- Mark approved courses as completed from the enrolled courses table, even if the course was deactivated later
+- View and edit their profile, including a JPEG, PNG or WebP photo up to 2 MB
+- Change their password, or reset a forgotten one by email
 
 **Principal**
 - See totals and pending requests on a dashboard
 - Approve or reject course requests
+- Review the enrollment history across all statuses
 - Manage students, departments and courses
 
 ## How enrollment works
@@ -28,14 +30,19 @@ stateDiagram-v2
     Approved --> Completed: student completes course
 ```
 
-A database constraint allows one request per student and course, so duplicates can't be created.
+A database constraint allows one request per student and course, so duplicates can't be created. Only active courses can be requested, and staff accounts can't request courses.
+
+A course that has enrollment records can't be deleted. Set its status to Inactive instead.
 
 ## Access control
 
 - A custom `Student` model extends Django's `AbstractUser`.
-- `PublicAccessMiddleware` redirects logged-out visitors from every page except the public ones.
-- Admin views require a logged-in staff user, and login redirects each user by role.
-- Actions that change data accept POST only and are protected by Django's CSRF checks.
+- `PublicAccessMiddleware` redirects logged-out visitors to the landing page. It exempts the landing, login and register pages, and everything under `/static/`, `/media/`, `/admin/`, `/student/password-reset/` and `/student/reset/`.
+- Because `/media/` is exempt, anyone who has a profile photo's URL can open it without logging in. New uploads get random UUID filenames, so their URLs can't be guessed.
+- Principal views require a logged-in staff user and return 403 to logged-in students. Login redirects each user by role.
+- Enrolling, completing a course, logging out, approving, rejecting and every delete action accept POST only. These and all other forms are protected by Django's CSRF checks.
+- Registration, the principal's Add Student form, password change and password reset apply `AUTH_PASSWORD_VALIDATORS`.
+- Emails are stored in lowercase, and a database constraint keeps them unique regardless of letter case.
 
 ## Tech stack
 
@@ -45,6 +52,7 @@ A database constraint allows one request per student and course, so duplicates c
 | Database | PostgreSQL |
 | Frontend | Django templates, Bootstrap 5 |
 | Email | Django SMTP backend |
+| Production serving | Gunicorn, WhiteNoise for static files |
 
 ## Project structure
 
@@ -52,7 +60,7 @@ A database constraint allows one request per student and course, so duplicates c
 edustream/    Project settings and URLs
 student/      Student model, auth, enrollment, profile, access middleware
 principal/    Admin dashboard, department and course models, approvals
-templates/    Shared base and landing templates
+templates/    Shared base, landing and password templates
 ```
 
 ## Screenshots
@@ -72,7 +80,7 @@ cd Edustream
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env    # set SECRET_KEY and your database credentials
+cp .env.example .env    # set SECRET_KEY, your database credentials and SMTP credentials
 createdb edustream
 
 python manage.py migrate
@@ -82,17 +90,59 @@ python manage.py runserver
 
 Open http://localhost:8000. Log in with the superuser account to reach the principal dashboard.
 
+Email needs `EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` and `DEFAULT_FROM_EMAIL` in `.env`. Without a working mail server, registration, approvals and password reset requests still complete, the failure is written to the log, and no email arrives.
+
 ## Tests
 
-The tests need a running PostgreSQL server and a `.env` file. Settings read the database credentials and `EMAIL_PORT` from it, and startup fails if `EMAIL_PORT` is missing. Django creates a separate test database, so the `DB_USER` role must be allowed to create databases.
+The tests need a running PostgreSQL server and `SECRET_KEY` plus the `DB_*` values, set in `.env` or the environment. Most tests error with `ImproperlyConfigured` if `SECRET_KEY` is missing. Django creates a separate test database, so the `DB_USER` role must be allowed to create databases.
 
 ```bash
 python manage.py test
 ```
 
-The suite covers the password reset flow, enrollment rules, role checks, CSRF protection, page access for each role and profile photo upload.
+The suite covers registration, login and logout, password reset and change, enrollment rules, role checks, CSRF protection, page access for each role, principal CRUD, profile editing, photo upload rules, email failures, query counts, the email migration and the production settings.
 
 CI runs the same tests against PostgreSQL 18 on every pull request and on pushes to `main`, using dummy values set in `.github/workflows/ci.yml`.
+
+## Deployment
+
+Any `DEBUG` value other than `True` runs in production mode, which is the behaviour described here. Set these on the host, using `.env.example` as the list:
+
+| Variable | Purpose |
+|----------|---------|
+| `SECRET_KEY` | Required. Use a long random value. |
+| `DEBUG` | Leave unset or `False`. |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | PostgreSQL connection. |
+| `ALLOWED_HOSTS` | Comma-separated hostnames. Required when `DEBUG` is off. |
+| `CSRF_TRUSTED_ORIGINS` | Comma-separated origins including the scheme, such as `https://example.com`. Needed when a proxy changes the host or scheme Django sees. |
+| `EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL` | SMTP account. |
+| `EMAIL_PORT`, `EMAIL_USE_TLS` | Default to `587` and off. |
+| `EMAIL_TIMEOUT` | Seconds before an SMTP attempt gives up. Defaults to `10`. |
+| `STATIC_ROOT`, `MEDIA_ROOT` | Default to `staticfiles/` and `media/` in the project. |
+| `LOG_LEVEL` | Defaults to `INFO`. Logs go to the console. |
+| `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_SSL_REDIRECT` | Default to on when `DEBUG` is off. |
+| `SECURE_HSTS_SECONDS` | Defaults to `31536000` when `DEBUG` is off and `0` when it is on. |
+| `SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD` | Default to off because they also affect other sites on the domain. `manage.py check --deploy` warns until both are on. |
+| `TRUST_X_FORWARDED_PROTO` | Defaults to off. Turn it on only behind a proxy that terminates HTTPS and overwrites `X-Forwarded-Proto`. Such a proxy needs it, because the HTTPS redirect loops without it. |
+
+Then run:
+
+```bash
+python manage.py migrate
+python manage.py collectstatic --noinput
+gunicorn edustream.wsgi
+```
+
+WhiteNoise serves the collected static files, so `collectstatic` must run before the app starts.
+
+If two existing accounts have emails that differ only by letter case, `migrate` stops before changing any data and lists the student ids. Give each account its own address, then run `migrate` again.
+
+### Profile photos in production
+
+Photos are saved to `MEDIA_ROOT` on the local disk, and Django serves `/media/` only when `DEBUG` is on. WhiteNoise serves static files only. The host must do both of these, or photos will show as broken images or disappear:
+
+1. Keep `MEDIA_ROOT` on storage that survives restarts and redeploys.
+2. Serve `/media/` from that directory using the web server or proxy in front of the app.
 
 ## License
 

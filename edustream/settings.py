@@ -12,12 +12,28 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import sys
+from django.contrib.messages import constants as message_constants
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR/'.env')
+
+# True under `manage.py test`, which needs neither HTTPS nor collected static files
+TESTING = sys.argv[1:2] == ['test']
+
+
+def env_bool(name, default):
+    value = os.getenv(name)
+    if not value:
+        return default
+    return value.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def env_list(name):
+    return [item.strip() for item in os.getenv(name, '').split(',') if item.strip()]
 
 
 # Quick-start development settings - unsuitable for production
@@ -29,7 +45,8 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = env_list('ALLOWED_HOSTS')
+CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS')
 
 
 # Application definition
@@ -48,6 +65,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -130,18 +148,76 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = '/static/'
-STATICFILES_DIRS = [BASE_DIR/'static']
+STATIC_ROOT = os.getenv('STATIC_ROOT') or BASE_DIR / 'staticfiles'
 
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = os.getenv('MEDIA_ROOT') or BASE_DIR / 'media'
+
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {
+        'BACKEND': (
+            'django.contrib.staticfiles.storage.StaticFilesStorage'
+            if DEBUG or TESTING
+            else 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+        ),
+    },
+}
+WHITENOISE_AUTOREFRESH = DEBUG or TESTING
 
 AUTH_USER_MODEL = 'student.Student'
+LOGIN_URL = 'student:login'
+
+# Bootstrap has no alert-error class
+MESSAGE_TAGS = {message_constants.ERROR: 'danger'}
 
 # EMAIL CONFIGURATION
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.getenv('EMAIL_HOST')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT'))
+EMAIL_PORT = int(os.getenv('EMAIL_PORT') or 587)
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL')
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT') or 10)
+DEFAULT_FROM_EMAIL = (
+    os.getenv('DEFAULT_FROM_EMAIL') or EMAIL_HOST_USER or 'webmaster@localhost'
+)
+
+# HTTPS PROTECTIONS (on when DEBUG is off, each overridable from the environment)
+SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', not DEBUG)
+CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE', not DEBUG)
+SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT', not DEBUG and not TESTING)
+SECURE_HSTS_SECONDS = int(
+    os.getenv('SECURE_HSTS_SECONDS') or (0 if DEBUG else 31536000)
+)
+# These two also affect other sites on the domain, so they are opt-in.
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', False)
+SECURE_HSTS_PRELOAD = env_bool('SECURE_HSTS_PRELOAD', False)
+# Only enable behind a proxy that overwrites X-Forwarded-Proto on every request.
+if env_bool('TRUST_X_FORWARDED_PROTO', False):
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# LOGGING
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {'format': '{asctime} {levelname} {name}: {message}', 'style': '{'},
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+            # Keeps expected 403s and 404s out of the test output
+            'level': 'CRITICAL' if TESTING else 'NOTSET',
+        },
+    },
+    'root': {'handlers': ['console'], 'level': os.getenv('LOG_LEVEL') or 'INFO'},
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.getenv('LOG_LEVEL') or 'INFO',
+            'propagate': False,
+        },
+    },
+}

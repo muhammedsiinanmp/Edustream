@@ -25,6 +25,9 @@ urlpatterns = [
     path('courses/edit/<int:id>/', views.admin_edit_course, name='admin_edit_course'),
     path('courses/delete/<int:id>/', views.admin_delete_course, name='admin_delete_course'),
 
+    # Enrollment history
+    path('enrollments/', views.admin_enrollments, name='admin_enrollments'),
+
     # Course approval
     path('approve/<int:purchase_id>/', views.approve_course, name='approve_course'),
     path('reject/<int:purchase_id>/', views.reject_course, name='reject_course'),

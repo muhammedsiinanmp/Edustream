@@ -1,8 +1,10 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
+from django.db.models import ProtectedError
 from django.views.decorators.http import require_POST
 from student.models import Student, CoursePurchase
+from student.notifications import notify
 from .models import Department, AddOnCourse
 from .forms import (
     AdminStudentForm,
@@ -10,33 +12,39 @@ from .forms import (
     DepartmentForm,
     AddOnCourseForm,
 )
-from .utils import is_admin
+from .utils import is_admin, paginate
 
 
 # ADMIN DASHBOARD
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_dashboard(request):
-    pending_purchases = CoursePurchase.objects.filter(status="pending")
+    pending_purchases = (
+        CoursePurchase.objects.filter(status="pending")
+        .select_related("student", "course")
+        .order_by("created_at", "id")
+    )
 
     context = {
         "student_count": Student.objects.count(),
         "department_count": Department.objects.count(),
         "course_count": AddOnCourse.objects.count(),
-        "pending_purchases": pending_purchases,
+        "pending_purchases": paginate(request, pending_purchases),
     }
     return render(request, "principal/dashboard.html", context)
 
 
 # STUDENT CRUD
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_students(request):
-    students = Student.objects.filter(is_staff=False)
-    return render(request, "principal/students.html", {"students": students})
+    students = Student.objects.filter(is_staff=False).select_related("dept").order_by("id")
+    return render(
+        request, "principal/students.html", {"students": paginate(request, students)}
+    )
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_add_student(request):
     if request.method == "POST":
@@ -51,10 +59,10 @@ def admin_add_student(request):
     return render(request, "principal/add_student.html", {"form": form})
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_edit_student(request, id):
-    student = get_object_or_404(Student, id=id)
+    student = get_object_or_404(Student, id=id, is_staff=False)
 
     if request.method == "POST":
         form = AdminEditStudentForm(request.POST, instance=student)
@@ -69,24 +77,28 @@ def admin_edit_student(request, id):
 
 
 @require_POST
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_delete_student(request, id):
-    student = get_object_or_404(Student, id=id)
+    student = get_object_or_404(Student, id=id, is_staff=False)
     student.delete()
     messages.success(request, "Student deleted successfully")
     return redirect("principal:admin_students")
 
 
 # DEPARTMENT CRUD
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_departments(request):
-    departments = Department.objects.all()
-    return render(request, "principal/departments.html", {"departments": departments})
+    departments = Department.objects.order_by("id")
+    return render(
+        request,
+        "principal/departments.html",
+        {"departments": paginate(request, departments)},
+    )
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_add_department(request):
     form = DepartmentForm(request.POST or None)
@@ -99,7 +111,7 @@ def admin_add_department(request):
     return render(request, "principal/add_department.html", {"form": form})
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_edit_department(request, id):
     dept = get_object_or_404(Department, id=id)
@@ -114,7 +126,7 @@ def admin_edit_department(request, id):
 
 
 @require_POST
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_delete_department(request, id):
     dept = get_object_or_404(Department, id=id)
@@ -124,14 +136,16 @@ def admin_delete_department(request, id):
 
 
 # COURSE CRUD
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_courses(request):
-    courses = AddOnCourse.objects.all()
-    return render(request, "principal/courses.html", {"courses": courses})
+    courses = AddOnCourse.objects.order_by("id")
+    return render(
+        request, "principal/courses.html", {"courses": paginate(request, courses)}
+    )
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_add_course(request):
     form = AddOnCourseForm(request.POST or None)
@@ -144,7 +158,7 @@ def admin_add_course(request):
     return render(request, "principal/add_course.html", {"form": form})
 
 
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_edit_course(request, id):
     course = get_object_or_404(AddOnCourse, id=id)
@@ -159,18 +173,38 @@ def admin_edit_course(request, id):
 
 
 @require_POST
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def admin_delete_course(request, id):
     course = get_object_or_404(AddOnCourse, id=id)
-    course.delete()
-    messages.success(request, "Course deleted successfully")
+    try:
+        course.delete()
+    except ProtectedError:
+        messages.error(
+            request,
+            "This course has enrollment history and can't be deleted. "
+            "Deactivate it instead by setting its status to Inactive.",
+        )
+    else:
+        messages.success(request, "Course deleted successfully")
     return redirect("principal:admin_courses")
+
+
+# ENROLLMENT HISTORY
+@login_required(login_url="student:login")
+@user_passes_test(is_admin)
+def admin_enrollments(request):
+    purchases = CoursePurchase.objects.select_related("student", "course").order_by(
+        "-created_at", "-id"
+    )
+    return render(
+        request, "principal/enrollments.html", {"purchases": paginate(request, purchases)}
+    )
 
 
 # COURSE APPROVAL FLOW
 @require_POST
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def approve_course(request, purchase_id):
     purchase = get_object_or_404(CoursePurchase, id=purchase_id)
@@ -179,12 +213,19 @@ def approve_course(request, purchase_id):
         purchase.status = "approved"
         purchase.save()
         messages.success(request, f"Approved course for {purchase.student.username}")
+        notify(
+            purchase.student,
+            "Your Edustream course request was approved",
+            f"Hi {purchase.student.username},\n\n"
+            f"Your request for {purchase.course.name} has been approved.\n\n"
+            "— Edustream Team",
+        )
 
     return redirect("principal:admin_dashboard")
 
 
 @require_POST
-@login_required(login_url="login")
+@login_required(login_url="student:login")
 @user_passes_test(is_admin)
 def reject_course(request, purchase_id):
     purchase = get_object_or_404(CoursePurchase, id=purchase_id)
@@ -193,5 +234,12 @@ def reject_course(request, purchase_id):
         purchase.status = "rejected"
         purchase.save()
         messages.warning(request, f"Rejected course for {purchase.student.username}")
+        notify(
+            purchase.student,
+            "Your Edustream course request was rejected",
+            f"Hi {purchase.student.username},\n\n"
+            f"Your request for {purchase.course.name} was not approved.\n\n"
+            "— Edustream Team",
+        )
 
     return redirect("principal:admin_dashboard")

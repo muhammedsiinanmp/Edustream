@@ -1,9 +1,10 @@
 from django import forms 
+from student.forms import PasswordRulesMixin, UniqueEmailMixin
 from student.models import Student
 from .models import Department,AddOnCourse
 from django.contrib.auth.hashers import make_password
 
-class AdminStudentForm(forms.ModelForm):
+class AdminStudentForm(UniqueEmailMixin, PasswordRulesMixin, forms.ModelForm):
     password= forms.CharField(widget=forms.PasswordInput)
 
     class Meta:
@@ -12,6 +13,12 @@ class AdminStudentForm(forms.ModelForm):
             'username','email','phone','dob',
             'dept','age','rollno','password'
         ]
+        widgets = {'dob': forms.DateInput(attrs={'type': 'date'})}
+
+    def clean(self):
+        cleaned_data = super().clean()
+        self.check_password_rules(cleaned_data)
+        return cleaned_data
 
     def save(self,commit=True):
         student = super().save(commit=False)

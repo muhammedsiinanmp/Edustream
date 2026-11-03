@@ -1,3 +1,4 @@
+from django.core.validators import MinValueValidator
 from django.db import models
 
 class Department(models.Model):
@@ -11,7 +12,7 @@ class Department(models.Model):
 class AddOnCourse(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField()
-    price = models.IntegerField()
+    price = models.IntegerField(validators=[MinValueValidator(0)])
     status = models.CharField(
         max_length=20,
         choices=[("active", "Active"), ("inactive", "Inactive")],
