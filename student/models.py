@@ -49,7 +49,7 @@ class Student(AbstractUser):
         super().save(*args, **kwargs)
     
 class CoursePurchase(models.Model):
-    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    student = models.ForeignKey(Student, on_delete=models.PROTECT)
     course = models.ForeignKey('principal.AddOnCourse', on_delete=models.PROTECT)
     status = models.CharField(
         max_length=20,

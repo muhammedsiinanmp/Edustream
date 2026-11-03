@@ -3,6 +3,7 @@ from unittest import mock
 from django.contrib.auth.models import AnonymousUser
 from django.core import mail
 from django.db import connection
+from django.db.models import ProtectedError
 from django.test import Client, RequestFactory, TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -600,6 +601,41 @@ class StudentCrudTests(TestCase):
         )
         self.assertRedirects(response, reverse("principal:admin_students"))
         self.assertFalse(Student.objects.filter(id=self.student.id).exists())
+
+
+class StudentDeletionTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        self.url = reverse("principal:admin_delete_student", args=[self.student.id])
+        self.client.force_login(self.admin)
+
+    def test_student_with_enrollments_is_kept_and_steers_to_deactivation(self):
+        purchase = CoursePurchase.objects.create(
+            student=self.student, course=self.course, status="completed"
+        )
+
+        response = self.client.post(self.url, follow=True)
+
+        self.assertRedirects(response, reverse("principal:admin_students"))
+        self.assertContains(response, "enrollment history")
+        self.assertContains(response, "Deactivate")
+        self.assertContains(response, "alert-danger")
+        self.assertTrue(Student.objects.filter(id=self.student.id).exists())
+        self.assertTrue(CoursePurchase.objects.filter(id=purchase.id).exists())
+
+    def test_deleting_through_the_model_is_refused_too(self):
+        CoursePurchase.objects.create(student=self.student, course=self.course)
+        with self.assertRaises(ProtectedError):
+            self.student.delete()
+        self.assertEqual(CoursePurchase.objects.filter(student=self.student).count(), 1)
 
 
 class StudentDeactivationTests(TestCase):

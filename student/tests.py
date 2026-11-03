@@ -796,6 +796,44 @@ class StudentAdminTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'name="password"')
 
+    def enrolled_student(self):
+        student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        CoursePurchase.objects.create(student=student, course=course)
+        return student
+
+    def assert_student_and_history_kept(self, student, response):
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "protected related objects")
+        self.assertContains(response, "Cloud Fundamentals")
+        self.assertTrue(Student.objects.filter(id=student.id).exists())
+        self.assertEqual(CoursePurchase.objects.filter(student=student).count(), 1)
+
+    def test_delete_page_refuses_a_student_with_enrollments(self):
+        student = self.enrolled_student()
+        url = reverse("admin:student_student_delete", args=[student.id])
+
+        self.assert_student_and_history_kept(student, self.client.get(url))
+        self.assert_student_and_history_kept(
+            student, self.client.post(url, {"post": "yes"})
+        )
+
+    def test_bulk_delete_action_refuses_a_student_with_enrollments(self):
+        student = self.enrolled_student()
+        response = self.client.post(
+            reverse("admin:student_student_changelist"),
+            {
+                "action": "delete_selected",
+                "_selected_action": [student.id],
+                "post": "yes",
+            },
+        )
+        self.assert_student_and_history_kept(student, response)
+
 
 class RegistrationTests(TestCase):
     def payload(self, **overrides):
