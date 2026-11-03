@@ -23,15 +23,15 @@
     <tbody>
       {% for student in students %}
       <tr>
-        <td class="d-none d-md-table-cell">{{ student.rollno }}</td>
-        <td class="fw-semibold">
+        <td class="d-none d-md-table-cell text-break">{{ student.rollno }}</td>
+        <td class="fw-semibold text-break">
           {{ student.username }}
           {% if not student.is_active %}
             <span class="badge bg-secondary ms-1">Inactive</span>
           {% endif %}
         </td>
         <td class="text-break">{{ student.email }}</td>
-        <td class="d-none d-md-table-cell">
+        <td class="d-none d-md-table-cell text-break">
           {% if student.dept %}
             {{ student.dept.name }}
           {% else %}

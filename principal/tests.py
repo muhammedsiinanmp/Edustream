@@ -1,3 +1,4 @@
+from html.parser import HTMLParser
 from unittest import mock
 
 from django.contrib.auth.models import AnonymousUser
@@ -11,6 +12,55 @@ from django.urls import reverse
 from principal.models import AddOnCourse, Department
 from principal.views import admin_dashboard
 from student.models import CoursePurchase, Student
+
+
+VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input",
+             "link", "meta", "source", "track", "wbr"}
+
+
+class _BreakableTextParser(HTMLParser):
+    def __init__(self, values):
+        super().__init__()
+        self.values = values
+        self.stack = []
+        self.found = {value: [] for value in values}
+
+    def handle_starttag(self, tag, attrs):
+        if tag in VOID_TAGS:
+            return
+        classes = (dict(attrs).get("class") or "").split()
+        self.stack.append((tag, "text-break" in classes))
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                return
+
+    def handle_data(self, data):
+        for value in self.values:
+            if value in data:
+                path = ">".join(tag for tag, _ in self.stack)
+                self.found[value].append((path, any(b for _, b in self.stack)))
+
+
+def unbreakable_occurrences(html, values):
+    """Map each value to the places it appears as page text, and the places
+    where it is not inside an element with Bootstrap's text-break class.
+
+    A long value with no spaces only wraps when it sits inside text-break;
+    otherwise it stretches its table cell and pushes action buttons off a
+    375px phone screen.
+    """
+    parser = _BreakableTextParser(values)
+    parser.feed(html)
+    return {
+        value: (
+            [path for path, _ in places],
+            [path for path, breaks in places if not breaks],
+        )
+        for value, places in parser.found.items()
+    }
 
 
 class AdminActionTests(TestCase):
@@ -816,3 +866,73 @@ class CourseCrudTests(TestCase):
         self.assertRedirects(response, reverse("principal:admin_courses"))
         course.refresh_from_db()
         self.assertEqual(course.status, "inactive")
+
+
+class LongUnbrokenTextTests(TestCase):
+    """Usernames, emails, names and descriptions can be long with no spaces.
+    Every table must let them wrap so the action buttons stay on screen."""
+
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.department = Department.objects.create(
+            name="D" * 100, description="E" * 400
+        )
+        self.course = AddOnCourse.objects.create(
+            name="C" * 200, description="F" * 400, price=2999
+        )
+        self.student = Student.objects.create_user(
+            "u" * 150,
+            "m" * 64 + "@" + "n" * 63 + ".example.com",
+            "Demo-pass-4821",
+            dept=self.department,
+            rollno=2147483647,
+            is_active=False,
+        )
+        CoursePurchase.objects.create(student=self.student, course=self.course)
+        self.client.force_login(self.admin)
+
+    def assert_every_occurrence_breaks(self, url, values):
+        html = self.client.get(url).content.decode()
+        for value, (places, unbreakable) in unbreakable_occurrences(
+            html, values
+        ).items():
+            with self.subTest(url=url, value=value[:20]):
+                self.assertTrue(places, "value is not shown on the page")
+                self.assertEqual(unbreakable, [])
+
+    def test_dashboard_pending_requests(self):
+        self.assert_every_occurrence_breaks(
+            reverse("principal:admin_dashboard"),
+            [self.student.username, self.course.name],
+        )
+
+    def test_students_list(self):
+        self.assert_every_occurrence_breaks(
+            reverse("principal:admin_students"),
+            [
+                self.student.username,
+                self.student.email,
+                self.department.name,
+                str(self.student.rollno),
+            ],
+        )
+
+    def test_courses_list(self):
+        self.assert_every_occurrence_breaks(
+            reverse("principal:admin_courses"),
+            [self.course.name, self.course.description],
+        )
+
+    def test_departments_list(self):
+        self.assert_every_occurrence_breaks(
+            reverse("principal:admin_departments"),
+            [self.department.name, self.department.description],
+        )
+
+    def test_enrollment_history(self):
+        self.assert_every_occurrence_breaks(
+            reverse("principal:admin_enrollments"),
+            [self.student.username, self.course.name],
+        )

@@ -190,7 +190,7 @@
             {% for p in pending_purchases %}
             <tr>
               <td class="fw-semibold text-break">{{ p.student.username }}</td>
-              <td>{{ p.course.name }}</td>
+              <td class="text-break">{{ p.course.name }}</td>
               <td class="d-none d-sm-table-cell">
                 <span class="badge bg-warning text-dark">
                   {{ p.status|title }}

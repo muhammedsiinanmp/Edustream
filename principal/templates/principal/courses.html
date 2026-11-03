@@ -23,9 +23,9 @@
     <tbody>
       {% for course in courses %}
       <tr>
-        <td class="fw-semibold">{{ course.name }}</td>
+        <td class="fw-semibold text-break">{{ course.name }}</td>
 
-        <td class="text-muted d-none d-md-table-cell">
+        <td class="text-muted d-none d-md-table-cell text-break">
           {{ course.description|truncatewords:12 }}
         </td>
 

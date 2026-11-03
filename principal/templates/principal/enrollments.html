@@ -22,8 +22,8 @@
     <tbody>
       {% for p in purchases %}
       <tr>
-        <td class="fw-semibold">{{ p.student.username }}</td>
-        <td>{{ p.course.name }}</td>
+        <td class="fw-semibold text-break">{{ p.student.username }}</td>
+        <td class="text-break">{{ p.course.name }}</td>
         <td>
           {% if p.status == 'pending' %}
             <span class="badge bg-warning text-dark">Pending</span>
