@@ -123,7 +123,7 @@ Any `DEBUG` value other than `True` runs in production mode, which is the behavi
 | `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_SSL_REDIRECT` | Default to on when `DEBUG` is off. |
 | `SECURE_HSTS_SECONDS` | Defaults to `31536000` when `DEBUG` is off and `0` when it is on. |
 | `SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD` | Default to off because they also affect other sites on the domain. `manage.py check --deploy` warns until both are on. |
-| `TRUST_X_FORWARDED_PROTO` | Defaults to off. Turn it on only behind a proxy that terminates HTTPS and overwrites `X-Forwarded-Proto`. Such a proxy needs it, because the HTTPS redirect loops without it. |
+| `TRUST_X_FORWARDED_PROTO` | Defaults to off. When on, Django treats a request as HTTPS if `X-Forwarded-Proto` is `https`, whichever address it came from. Gunicorn can also do this on its own; see [Behind a proxy](#behind-a-proxy). |
 
 Then run:
 
@@ -136,6 +136,30 @@ gunicorn edustream.wsgi
 WhiteNoise serves the collected static files, so `collectstatic` must run before the app starts.
 
 If two existing accounts have emails that differ only by letter case, `migrate` stops before changing any data and lists the student ids. Give each account its own address, then run `migrate` again.
+
+### Behind a proxy
+
+Gunicorn 26.2.0, the pinned version, reads `X-Forwarded-Proto`, `X-Forwarded-Ssl` and `X-Forwarded-Protocol` itself when a request comes from an address in its `forwarded_allow_ips` setting. That setting defaults to `127.0.0.1,::1`, or to the `FORWARDED_ALLOW_IPS` environment variable if it is set, and connections over a UNIX socket are always trusted. When one of those headers says HTTPS, Gunicorn marks the request as HTTPS and Django believes it, even with `TRUST_X_FORWARDED_PROTO` off.
+
+So a proxy on the same machine is trusted by default. Whichever way the header is trusted, the proxy in front of the app must:
+
+1. Overwrite `X-Forwarded-Proto` on every request with the scheme the client actually used, never passing on a value the client sent.
+2. Remove any `X-Forwarded-Ssl` and `X-Forwarded-Protocol` headers sent by the client.
+3. Be the only route to Gunicorn, so clients can't connect to it directly from a trusted address.
+
+To choose which proxy addresses Gunicorn trusts, pass them with `--forwarded-allow-ips`. Replace `10.0.0.5` with your proxy's address; several can be given, separated by commas, and CIDR ranges are accepted:
+
+```bash
+gunicorn edustream.wsgi --forwarded-allow-ips="10.0.0.5"
+```
+
+To make Gunicorn trust no address and leave the decision to Django, pass an empty value and turn on `TRUST_X_FORWARDED_PROTO`:
+
+```bash
+gunicorn edustream.wsgi --forwarded-allow-ips=""
+```
+
+If neither Gunicorn nor Django trusts the proxy, every request looks like plain HTTP and the HTTPS redirect loops.
 
 ### Profile photos in production
 
