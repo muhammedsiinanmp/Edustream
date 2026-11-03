@@ -19,6 +19,9 @@ A role-based learning management system built with Django and PostgreSQL. Studen
 - Approve or reject course requests
 - Review the enrollment history across all statuses
 - Manage students, departments and courses
+- Deactivate a student so they can no longer log in, and reactivate them later
+
+On narrow screens the tables hide secondary columns, such as roll number, department, description and price, and stack their buttons. At 375px wide, a common phone width, every action button is visible without scrolling sideways.
 
 ## How enrollment works
 
@@ -34,15 +37,18 @@ A database constraint allows one request per student and course, so duplicates c
 
 A course that has enrollment records can't be deleted. Set its status to Inactive instead.
 
+A student who has enrollment records can't be deleted either, from the principal's student list or from Django admin, which shows its own page listing the protected records. Use Deactivate instead. A deactivated student can't log in, an open session ends at their next request, their records stay in the enrollment history, and the student list marks them Inactive. Reactivate lets them log in again. Students without enrollment records can still be deleted, and staff accounts can't be deleted, deactivated or edited from the student list.
+
 ## Access control
 
 - A custom `Student` model extends Django's `AbstractUser`.
 - `PublicAccessMiddleware` redirects logged-out visitors to the landing page. It exempts the landing, login and register pages, and everything under `/static/`, `/media/`, `/admin/`, `/student/password-reset/` and `/student/reset/`.
 - Because `/media/` is exempt, anyone who has a profile photo's URL can open it without logging in. New uploads get random UUID filenames, so their URLs can't be guessed.
-- Principal views require a logged-in staff user and return 403 to logged-in students. Login redirects each user by role.
-- Enrolling, completing a course, logging out, approving, rejecting and every delete action accept POST only. These and all other forms are protected by Django's CSRF checks.
+- Principal views require a logged-in staff user. Logged-in students get a 403 page, `templates/403.html`, that links back to their dashboard. Login redirects each user by role.
+- Enrolling, completing a course, logging out, approving, rejecting, deactivating, reactivating and every delete action accept POST only. These and all other forms are protected by Django's CSRF checks.
 - Registration, the principal's Add Student form, password change and password reset apply `AUTH_PASSWORD_VALIDATORS`.
 - Emails are stored in lowercase, and a database constraint keeps them unique regardless of letter case.
+- `Student.save()` checks a new photo against the same rules as the forms, so code that saves a student without a form gets a `ValidationError` instead of storing a photo that breaks them.
 
 ## Tech stack
 
@@ -60,7 +66,7 @@ A course that has enrollment records can't be deleted. Set its status to Inactiv
 edustream/    Project settings and URLs
 student/      Student model, auth, enrollment, profile, access middleware
 principal/    Admin dashboard, department and course models, approvals
-templates/    Shared base, landing and password templates
+templates/    Shared base, landing, 403 and password templates
 ```
 
 ## Screenshots
@@ -100,7 +106,7 @@ The tests need a running PostgreSQL server and `SECRET_KEY` plus the `DB_*` valu
 python manage.py test
 ```
 
-The suite covers registration, login and logout, password reset and change, enrollment rules, role checks, CSRF protection, page access for each role, principal CRUD, profile editing, photo upload rules, email failures, query counts, the email migration and the production settings.
+The suite covers registration, login and logout, password reset and change, enrollment rules, role checks, CSRF protection, page access for each role, principal CRUD, student deactivation and protected deletion, the 403 page, profile editing, photo upload rules, email failures, query counts, the email migration and the production settings.
 
 CI runs the same tests against PostgreSQL 18 on every pull request and on pushes to `main`, using dummy values set in `.github/workflows/ci.yml`.
 
