@@ -177,8 +177,8 @@
         <thead class="table-light">
             <tr>
                 <th>Course Name</th>
-                <th>Description</th>
-                <th>Price</th>
+                <th class="d-none d-md-table-cell">Description</th>
+                <th class="d-none d-md-table-cell">Price</th>
                 <th>Status</th>
                 <th>Action</th>
             </tr>
@@ -188,10 +188,10 @@
             {% for p in purchases %}
             <tr>
                 <td class="fw-semibold">{{ p.course.name }}</td>
-                <td class="text-muted">
+                <td class="text-muted d-none d-md-table-cell">
                     {{ p.course.description|truncatewords:12 }}
                 </td>
-                <td>₹ {{ p.course.price }}</td>
+                <td class="d-none d-md-table-cell">₹ {{ p.course.price }}</td>
                 <td>
                     {% if p.status == 'pending' %}
                     <span class="badge bg-warning text-dark">Pending</span>

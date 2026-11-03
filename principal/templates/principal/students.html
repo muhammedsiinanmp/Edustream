@@ -12,26 +12,26 @@
   <table class="table table-bordered align-middle shadow-sm">
     <thead class="table-light">
       <tr>
-        <th>Roll No</th>
+        <th class="d-none d-md-table-cell">Roll No</th>
         <th>Username</th>
         <th>Email</th>
-        <th>Department</th>
-        <th style="width: 160px;">Actions</th>
+        <th class="d-none d-md-table-cell">Department</th>
+        <th>Actions</th>
       </tr>
     </thead>
 
     <tbody>
       {% for student in students %}
       <tr>
-        <td>{{ student.rollno }}</td>
+        <td class="d-none d-md-table-cell">{{ student.rollno }}</td>
         <td class="fw-semibold">
           {{ student.username }}
           {% if not student.is_active %}
             <span class="badge bg-secondary ms-1">Inactive</span>
           {% endif %}
         </td>
-        <td>{{ student.email }}</td>
-        <td>
+        <td class="text-break">{{ student.email }}</td>
+        <td class="d-none d-md-table-cell">
           {% if student.dept %}
             {{ student.dept.name }}
           {% else %}
@@ -39,18 +39,20 @@
           {% endif %}
         </td>
         <td>
+          <div class="d-flex flex-column flex-md-row align-items-start gap-1">
           <a href="{% url 'principal:admin_edit_student' student.id %}"
-             class="btn btn-sm btn-warning me-1">
+             class="btn btn-sm btn-warning">
             Edit
           </a>
           {% if student.is_active %}
-          <form method="post" action="{% url 'principal:admin_deactivate_student' student.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-secondary me-1"
+          <form method="post" action="{% url 'principal:admin_deactivate_student' student.id %}">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-secondary"
              onclick="return confirm('Deactivate this student? They will no longer be able to log in.')">Deactivate</button></form>
           {% else %}
-          <form method="post" action="{% url 'principal:admin_reactivate_student' student.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-success me-1">Reactivate</button></form>
+          <form method="post" action="{% url 'principal:admin_reactivate_student' student.id %}">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-success">Reactivate</button></form>
           {% endif %}
-          <form method="post" action="{% url 'principal:admin_delete_student' student.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger"
+          <form method="post" action="{% url 'principal:admin_delete_student' student.id %}">{% csrf_token %}<button type="submit" class="btn btn-sm btn-danger"
              onclick="return confirm('Delete this student?')">Delete</button></form>
+          </div>
         </td>
       </tr>
       {% empty %}
