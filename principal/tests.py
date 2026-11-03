@@ -1,3 +1,4 @@
+import re
 from html.parser import HTMLParser
 from unittest import mock
 
@@ -976,3 +977,27 @@ class LongUnbrokenTextTests(TestCase):
             reverse("principal:admin_enrollments"),
             [self.student.username, self.course.name],
         )
+
+    def test_department_select_is_capped_to_screen_width(self):
+        # The add and edit student forms render an unstyled select, which
+        # grows to its longest option unless the page caps its width.
+        for url in [
+            reverse("principal:admin_add_student"),
+            reverse("principal:admin_edit_student", args=[self.student.id]),
+        ]:
+            with self.subTest(url=url):
+                html = self.client.get(url).content.decode()
+                self.assertIn(self.department.name, html)
+                styles = re.sub(
+                    r"/\*.*?\*/",
+                    "",
+                    "".join(re.findall(r"<style>(.*?)</style>", html, re.S)),
+                    flags=re.S,
+                )
+                capped = [
+                    rule
+                    for rule in re.findall(r"([^{}]+)\{([^}]*)\}", styles)
+                    if "select" in re.split(r"\s*,\s*", rule[0].strip())
+                    and re.search(r"max-width:\s*100%", rule[1])
+                ]
+                self.assertTrue(capped, "no style caps select width")
