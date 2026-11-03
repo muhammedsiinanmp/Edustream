@@ -24,8 +24,8 @@
                     <img src="https://via.placeholder.com/150" class="img-fluid rounded-circle mb-3">
                     {% endif %}
 
-                    <h5 class="mb-0">{{ student.username }}</h5>
-                    <small class="text-muted">{{ student.email }}</small>
+                    <h5 class="mb-0 text-break">{{ student.username }}</h5>
+                    <small class="text-muted text-break">{{ student.email }}</small>
 
                 </div>
             </div>
@@ -41,15 +41,15 @@
                     <table class="table table-borderless">
                         <tr>
                             <th>Username</th>
-                            <td>{{ student.username }}</td>
+                            <td class="text-break">{{ student.username }}</td>
                         </tr>
                         <tr>
                             <th>Email</th>
-                            <td>{{ student.email }}</td>
+                            <td class="text-break">{{ student.email }}</td>
                         </tr>
                         <tr>
                             <th>Phone</th>
-                            <td>{{ student.phone|default:"—" }}</td>
+                            <td class="text-break">{{ student.phone|default:"—" }}</td>
                         </tr>
                         <tr>
                             <th>Date of Birth</th>
@@ -61,11 +61,11 @@
                         </tr>
                         <tr>
                             <th>Department</th>
-                            <td>{{ student.dept|default:"—" }}</td>
+                            <td class="text-break">{{ student.dept|default:"—" }}</td>
                         </tr>
                         <tr>
                             <th>Roll No</th>
-                            <td>{{ student.rollno|default:"—" }}</td>
+                            <td class="text-break">{{ student.rollno|default:"—" }}</td>
                         </tr>
                         <tr>
                             <th>Joined On</th>

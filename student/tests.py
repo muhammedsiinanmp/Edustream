@@ -21,6 +21,7 @@ from django.utils import timezone
 from PIL import Image
 
 from principal.models import AddOnCourse, Department
+from principal.tests import unbreakable_occurrences
 from student.models import CoursePurchase, Student
 
 UUID_PHOTO_NAME = re.compile(r"^profiles/[0-9a-f]{32}\.(jpg|png|webp)$")
@@ -1241,3 +1242,51 @@ class EmailMigrationTests(TransactionTestCase):
         second.delete()
         self.migrate(self.after)
         self.assertEqual(Student.objects.get(id=first.id).email, "asha@example.com")
+
+
+class LongUnbrokenTextTests(TestCase):
+    """A student's own long, space-free username, email, department and
+    course names must wrap so the page fits a 375px phone screen."""
+
+    def setUp(self):
+        self.department = Department.objects.create(name="D" * 100)
+        self.course = AddOnCourse.objects.create(
+            name="C" * 200, description="F" * 400, price=2999
+        )
+        self.student = Student.objects.create_user(
+            "u" * 150,
+            "m" * 64 + "@" + "n" * 63 + ".example.com",
+            "Demo-pass-4821",
+            dept=self.department,
+            rollno=2147483647,
+        )
+        CoursePurchase.objects.create(
+            student=self.student, course=self.course, status="approved"
+        )
+        self.client.force_login(self.student)
+
+    def assert_every_occurrence_breaks(self, url, values):
+        html = self.client.get(url).content.decode()
+        for value, (places, unbreakable) in unbreakable_occurrences(
+            html, values
+        ).items():
+            with self.subTest(url=url, value=value[:20]):
+                self.assertTrue(places, "value is not shown on the page")
+                self.assertEqual(unbreakable, [])
+
+    def test_dashboard(self):
+        self.assert_every_occurrence_breaks(
+            reverse("student:student_dashboard"),
+            [self.student.username, self.course.name, self.course.description],
+        )
+
+    def test_profile(self):
+        self.assert_every_occurrence_breaks(
+            reverse("student:student_profile"),
+            [
+                self.student.username,
+                self.student.email,
+                self.department.name,
+                str(self.student.rollno),
+            ],
+        )

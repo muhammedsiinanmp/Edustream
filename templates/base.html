@@ -19,7 +19,7 @@
     <a class="navbar-brand" href="{{ home_url }}">Edustream</a>
     <div>
         {% if user.is_authenticated %}
-            <span class="text-white me-3">{{ user.username }}</span>
+            <span class="text-white text-break me-3">{{ user.username }}</span>
             <a href="{{ home_url }}" class="nav-dashboard btn btn-sm btn-outline-light me-2">Dashboard</a>
             <a href="{% url 'student:password_change' %}" class="btn btn-sm btn-outline-light me-2">Change Password</a>
             <form method="post" action="{% url 'student:logout' %}" class="d-inline">

@@ -42,7 +42,7 @@
 <div class="dashboard-hero mb-4 d-flex justify-content-between align-items-center">
     <div>
         <h3 class="fw-bold mb-1">Student Dashboard</h3>
-        <small>Welcome, {{ request.user.username }}</small>
+        <small class="text-break">Welcome, {{ request.user.username }}</small>
     </div>
     <div>
         <a href="{% url 'student:student_profile' %}" class="btn btn-light btn-sm">
@@ -93,8 +93,8 @@
             <div class="card-body d-flex flex-column">
 
                 <!-- Course Info -->
-                <h5 class="fw-bold">{{ course.name }}</h5>
-                <p class="course-meta mb-2">
+                <h5 class="fw-bold text-break">{{ course.name }}</h5>
+                <p class="course-meta mb-2 text-break">
                     {{ course.description|truncatewords:20 }}
                 </p>
 
@@ -187,8 +187,8 @@
         <tbody>
             {% for p in purchases %}
             <tr>
-                <td class="fw-semibold">{{ p.course.name }}</td>
-                <td class="text-muted d-none d-md-table-cell">
+                <td class="fw-semibold text-break">{{ p.course.name }}</td>
+                <td class="text-muted d-none d-md-table-cell text-break">
                     {{ p.course.description|truncatewords:12 }}
                 </td>
                 <td class="d-none d-md-table-cell">₹ {{ p.course.price }}</td>
