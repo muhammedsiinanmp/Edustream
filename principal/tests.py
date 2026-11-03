@@ -870,11 +870,12 @@ class CourseCrudTests(TestCase):
 
 class LongUnbrokenTextTests(TestCase):
     """Usernames, emails, names and descriptions can be long with no spaces.
-    Every table must let them wrap so the action buttons stay on screen."""
+    Every table, badge and flash message must let them wrap so the page
+    stays within a phone screen and the action buttons stay on screen."""
 
     def setUp(self):
         self.admin = Student.objects.create_superuser(
-            "principal", "principal@example.com", "Demo-pass-4821"
+            "p" * 150, "principal@example.com", "Demo-pass-4821"
         )
         self.department = Department.objects.create(
             name="D" * 100, description="E" * 400
@@ -890,11 +891,17 @@ class LongUnbrokenTextTests(TestCase):
             rollno=2147483647,
             is_active=False,
         )
-        CoursePurchase.objects.create(student=self.student, course=self.course)
+        self.purchase = CoursePurchase.objects.create(
+            student=self.student, course=self.course
+        )
         self.client.force_login(self.admin)
 
     def assert_every_occurrence_breaks(self, url, values):
-        html = self.client.get(url).content.decode()
+        self.assert_breaks(self.client.get(url), values)
+
+    def assert_breaks(self, response, values):
+        html = response.content.decode()
+        url = response.request["PATH_INFO"]
         for value, (places, unbreakable) in unbreakable_occurrences(
             html, values
         ).items():
@@ -902,10 +909,43 @@ class LongUnbrokenTextTests(TestCase):
                 self.assertTrue(places, "value is not shown on the page")
                 self.assertEqual(unbreakable, [])
 
+    def assert_flash_breaks(self, url, value):
+        response = self.client.post(url, follow=True)
+        messages = [str(message) for message in response.context["messages"]]
+        self.assertTrue(
+            any(value in message for message in messages),
+            "the action did not show a message naming the student",
+        )
+        self.assert_breaks(response, [value])
+
     def test_dashboard_pending_requests(self):
         self.assert_every_occurrence_breaks(
             reverse("principal:admin_dashboard"),
-            [self.student.username, self.course.name],
+            [self.admin.username, self.student.username, self.course.name],
+        )
+
+    def test_deactivate_message(self):
+        self.assert_flash_breaks(
+            reverse("principal:admin_deactivate_student", args=[self.student.id]),
+            self.student.username,
+        )
+
+    def test_reactivate_message(self):
+        self.assert_flash_breaks(
+            reverse("principal:admin_reactivate_student", args=[self.student.id]),
+            self.student.username,
+        )
+
+    def test_approve_message(self):
+        self.assert_flash_breaks(
+            reverse("principal:approve_course", args=[self.purchase.id]),
+            self.student.username,
+        )
+
+    def test_reject_message(self):
+        self.assert_flash_breaks(
+            reverse("principal:reject_course", args=[self.purchase.id]),
+            self.student.username,
         )
 
     def test_students_list(self):
