@@ -21,8 +21,8 @@
     <tbody>
       {% for dept in departments %}
       <tr>
-        <td class="fw-semibold">{{ dept.name }}</td>
-        <td class="text-muted">
+        <td class="fw-semibold text-break">{{ dept.name }}</td>
+        <td class="text-muted text-break">
           {{ dept.description|truncatewords:15 }}
         </td>
         <td>

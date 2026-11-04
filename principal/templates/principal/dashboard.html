@@ -43,7 +43,7 @@
       </small>
     </div>
     <div>
-      <span class="badge bg-success bg-opacity-25 text-success px-3 py-2">
+      <span class="badge bg-success bg-opacity-25 text-success px-3 py-2 text-wrap text-break">
         Logged in as {{ request.user.username }}
       </span>
     </div>
@@ -181,7 +181,7 @@
             <tr>
               <th>Student</th>
               <th>Course</th>
-              <th>Status</th>
+              <th class="d-none d-sm-table-cell">Status</th>
               <th class="text-end">Action</th>
             </tr>
           </thead>
@@ -189,16 +189,18 @@
 
             {% for p in pending_purchases %}
             <tr>
-              <td class="fw-semibold">{{ p.student.username }}</td>
-              <td>{{ p.course.name }}</td>
-              <td>
+              <td class="fw-semibold text-break">{{ p.student.username }}</td>
+              <td class="text-break">{{ p.course.name }}</td>
+              <td class="d-none d-sm-table-cell">
                 <span class="badge bg-warning text-dark">
                   {{ p.status|title }}
                 </span>
               </td>
-              <td class="text-end">
-                <form method="post" action="{% url 'principal:approve_course' p.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-success me-1">Approve</button></form>
-                <form method="post" action="{% url 'principal:reject_course' p.id %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-danger">Reject</button></form>
+              <td>
+                <div class="d-flex flex-column flex-sm-row justify-content-end align-items-end gap-1">
+                <form method="post" action="{% url 'principal:approve_course' p.id %}">{% csrf_token %}<button type="submit" class="btn btn-sm btn-success">Approve</button></form>
+                <form method="post" action="{% url 'principal:reject_course' p.id %}">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-danger">Reject</button></form>
+                </div>
               </td>
             </tr>
             {% endfor %}

@@ -4,6 +4,11 @@
     <title>{% block title %}Edustream{% endblock %}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Fields rendered without Bootstrap classes size to their content, so a
+           long department name would stretch a select past the screen. */
+        select, input, textarea { max-width: 100%; }
+    </style>
 </head>
 <body>
 
@@ -19,7 +24,7 @@
     <a class="navbar-brand" href="{{ home_url }}">Edustream</a>
     <div>
         {% if user.is_authenticated %}
-            <span class="text-white me-3">{{ user.username }}</span>
+            <span class="text-white text-break me-3">{{ user.username }}</span>
             <a href="{{ home_url }}" class="nav-dashboard btn btn-sm btn-outline-light me-2">Dashboard</a>
             <a href="{% url 'student:password_change' %}" class="btn btn-sm btn-outline-light me-2">Change Password</a>
             <form method="post" action="{% url 'student:logout' %}" class="d-inline">
@@ -32,7 +37,7 @@
 
 <div class="container mt-4">
     {% for message in messages %}
-        <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+        <div class="alert alert-{{ message.tags }} text-break">{{ message }}</div>
     {% endfor %}
     {% block content %}{% endblock %}
 </div>

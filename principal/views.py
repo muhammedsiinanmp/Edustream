@@ -81,8 +81,41 @@ def admin_edit_student(request, id):
 @user_passes_test(is_admin)
 def admin_delete_student(request, id):
     student = get_object_or_404(Student, id=id, is_staff=False)
-    student.delete()
-    messages.success(request, "Student deleted successfully")
+    try:
+        student.delete()
+    except ProtectedError:
+        messages.error(
+            request,
+            "This student has enrollment history and can't be deleted. "
+            "Deactivate the account instead, which stops them logging in "
+            "and keeps their records.",
+        )
+    else:
+        messages.success(request, "Student deleted successfully")
+    return redirect("principal:admin_students")
+
+
+@require_POST
+@login_required(login_url="student:login")
+@user_passes_test(is_admin)
+def admin_deactivate_student(request, id):
+    student = get_object_or_404(Student, id=id, is_staff=False)
+    student.is_active = False
+    student.save(update_fields=["is_active"])
+    messages.success(
+        request, f"{student.username} was deactivated and can no longer log in"
+    )
+    return redirect("principal:admin_students")
+
+
+@require_POST
+@login_required(login_url="student:login")
+@user_passes_test(is_admin)
+def admin_reactivate_student(request, id):
+    student = get_object_or_404(Student, id=id, is_staff=False)
+    student.is_active = True
+    student.save(update_fields=["is_active"])
+    messages.success(request, f"{student.username} was reactivated and can log in again")
     return redirect("principal:admin_students")
 
 

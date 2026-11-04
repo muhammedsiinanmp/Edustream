@@ -10,6 +10,7 @@ from unittest import mock
 from django.conf import settings
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.exceptions import ValidationError
 from django.core.management.base import CommandError
 from django.db import IntegrityError, connection, transaction
 from django.db.migrations.executor import MigrationExecutor
@@ -20,6 +21,7 @@ from django.utils import timezone
 from PIL import Image
 
 from principal.models import AddOnCourse, Department
+from principal.tests import unbreakable_occurrences
 from student.models import CoursePurchase, Student
 
 UUID_PHOTO_NAME = re.compile(r"^profiles/[0-9a-f]{32}\.(jpg|png|webp)$")
@@ -762,6 +764,59 @@ class ProfilePhotoTests(TestCase):
         self.assertEqual(self.student.profile_pic.name, "profiles/legacy.gif")
 
 
+class UnvalidatedPhotoSaveTests(TestCase):
+    """Student.save() re-encodes new photos, even when no form validated them."""
+
+    def setUp(self):
+        media_root = tempfile.TemporaryDirectory()
+        self.addCleanup(media_root.cleanup)
+        self.media_root = Path(media_root.name)
+
+        media_override = override_settings(MEDIA_ROOT=media_root.name)
+        media_override.enable()
+        self.addCleanup(media_override.disable)
+
+    def save_with_photo(self, photo, username="asha"):
+        Student(
+            username=username, email=f"{username}@example.com", profile_pic=photo
+        ).save()
+
+    def oversized_file(self):
+        noise = Image.frombytes("RGB", (900, 900), os.urandom(900 * 900 * 3))
+        buffer = BytesIO()
+        noise.save(buffer, format="PNG")
+        self.assertGreater(len(buffer.getvalue()), 2 * 1024 * 1024)
+        return SimpleUploadedFile("a.png", buffer.getvalue())
+
+    def test_photo_breaking_the_rules_raises_validation_error_and_saves_nothing(self):
+        cases = {
+            "over 2 MB": self.oversized_file,
+            "over the pixel cap": lambda: photo_upload(
+                "a.png", "PNG", size=(6000, 6000), mode="1"
+            ),
+            # Past Pillow's own limit, Image.open raises DecompressionBombError.
+            "decompression bomb": lambda: photo_upload(
+                "a.png", "PNG", size=(15000, 15000), mode="1"
+            ),
+            "not an image": lambda: SimpleUploadedFile("a.png", b"not an image"),
+            "disallowed format": lambda: photo_upload("a.png", "GIF"),
+        }
+        for number, (label, make_photo) in enumerate(cases.items()):
+            with self.subTest(label):
+                username = f"student{number}"
+                with self.assertRaises(ValidationError):
+                    self.save_with_photo(make_photo(), username)
+                self.assertFalse(Student.objects.filter(username=username).exists())
+                self.assertEqual(list(self.media_root.rglob("*.*")), [])
+
+    def test_valid_photo_is_still_reencoded(self):
+        self.save_with_photo(photo_upload("../scan.png", "PNG"))
+        student = Student.objects.get(username="asha")
+        self.assertRegex(student.profile_pic.name, UUID_PHOTO_NAME)
+        with Image.open(self.media_root / student.profile_pic.name) as stored:
+            self.assertEqual(stored.format, "PNG")
+
+
 class StudentAdminTests(TestCase):
     def setUp(self):
         self.admin = Student.objects.create_superuser(
@@ -795,6 +850,44 @@ class StudentAdminTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'name="password"')
+
+    def enrolled_student(self):
+        student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        CoursePurchase.objects.create(student=student, course=course)
+        return student
+
+    def assert_student_and_history_kept(self, student, response):
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "protected related objects")
+        self.assertContains(response, "Cloud Fundamentals")
+        self.assertTrue(Student.objects.filter(id=student.id).exists())
+        self.assertEqual(CoursePurchase.objects.filter(student=student).count(), 1)
+
+    def test_delete_page_refuses_a_student_with_enrollments(self):
+        student = self.enrolled_student()
+        url = reverse("admin:student_student_delete", args=[student.id])
+
+        self.assert_student_and_history_kept(student, self.client.get(url))
+        self.assert_student_and_history_kept(
+            student, self.client.post(url, {"post": "yes"})
+        )
+
+    def test_bulk_delete_action_refuses_a_student_with_enrollments(self):
+        student = self.enrolled_student()
+        response = self.client.post(
+            reverse("admin:student_student_changelist"),
+            {
+                "action": "delete_selected",
+                "_selected_action": [student.id],
+                "post": "yes",
+            },
+        )
+        self.assert_student_and_history_kept(student, response)
 
 
 class RegistrationTests(TestCase):
@@ -1149,3 +1242,51 @@ class EmailMigrationTests(TransactionTestCase):
         second.delete()
         self.migrate(self.after)
         self.assertEqual(Student.objects.get(id=first.id).email, "asha@example.com")
+
+
+class LongUnbrokenTextTests(TestCase):
+    """A student's own long, space-free username, email, department and
+    course names must wrap so the page fits a 375px phone screen."""
+
+    def setUp(self):
+        self.department = Department.objects.create(name="D" * 100)
+        self.course = AddOnCourse.objects.create(
+            name="C" * 200, description="F" * 400, price=2999
+        )
+        self.student = Student.objects.create_user(
+            "u" * 150,
+            "m" * 64 + "@" + "n" * 63 + ".example.com",
+            "Demo-pass-4821",
+            dept=self.department,
+            rollno=2147483647,
+        )
+        CoursePurchase.objects.create(
+            student=self.student, course=self.course, status="approved"
+        )
+        self.client.force_login(self.student)
+
+    def assert_every_occurrence_breaks(self, url, values):
+        html = self.client.get(url).content.decode()
+        for value, (places, unbreakable) in unbreakable_occurrences(
+            html, values
+        ).items():
+            with self.subTest(url=url, value=value[:20]):
+                self.assertTrue(places, "value is not shown on the page")
+                self.assertEqual(unbreakable, [])
+
+    def test_dashboard(self):
+        self.assert_every_occurrence_breaks(
+            reverse("student:student_dashboard"),
+            [self.student.username, self.course.name, self.course.description],
+        )
+
+    def test_profile(self):
+        self.assert_every_occurrence_breaks(
+            reverse("student:student_profile"),
+            [
+                self.student.username,
+                self.student.email,
+                self.department.name,
+                str(self.student.rollno),
+            ],
+        )

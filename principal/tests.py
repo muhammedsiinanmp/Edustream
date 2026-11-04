@@ -1,8 +1,11 @@
+import re
+from html.parser import HTMLParser
 from unittest import mock
 
 from django.contrib.auth.models import AnonymousUser
 from django.core import mail
 from django.db import connection
+from django.db.models import ProtectedError
 from django.test import Client, RequestFactory, TestCase
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -10,6 +13,55 @@ from django.urls import reverse
 from principal.models import AddOnCourse, Department
 from principal.views import admin_dashboard
 from student.models import CoursePurchase, Student
+
+
+VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input",
+             "link", "meta", "source", "track", "wbr"}
+
+
+class _BreakableTextParser(HTMLParser):
+    def __init__(self, values):
+        super().__init__()
+        self.values = values
+        self.stack = []
+        self.found = {value: [] for value in values}
+
+    def handle_starttag(self, tag, attrs):
+        if tag in VOID_TAGS:
+            return
+        classes = (dict(attrs).get("class") or "").split()
+        self.stack.append((tag, "text-break" in classes))
+
+    def handle_endtag(self, tag):
+        for index in range(len(self.stack) - 1, -1, -1):
+            if self.stack[index][0] == tag:
+                del self.stack[index:]
+                return
+
+    def handle_data(self, data):
+        for value in self.values:
+            if value in data:
+                path = ">".join(tag for tag, _ in self.stack)
+                self.found[value].append((path, any(b for _, b in self.stack)))
+
+
+def unbreakable_occurrences(html, values):
+    """Map each value to the places it appears as page text, and the places
+    where it is not inside an element with Bootstrap's text-break class.
+
+    A long value with no spaces only wraps when it sits inside text-break;
+    otherwise it stretches its table cell and pushes action buttons off a
+    375px phone screen.
+    """
+    parser = _BreakableTextParser(values)
+    parser.feed(html)
+    return {
+        value: (
+            [path for path, _ in places],
+            [path for path, breaks in places if not breaks],
+        )
+        for value, places in parser.found.items()
+    }
 
 
 class AdminActionTests(TestCase):
@@ -34,6 +86,8 @@ class AdminActionTests(TestCase):
             reverse("principal:approve_course", args=[self.purchase.id]),
             reverse("principal:reject_course", args=[self.purchase.id]),
             reverse("principal:admin_delete_student", args=[self.student.id]),
+            reverse("principal:admin_deactivate_student", args=[self.student.id]),
+            reverse("principal:admin_reactivate_student", args=[self.student.id]),
             reverse("principal:admin_delete_course", args=[self.course.id]),
             reverse("principal:admin_delete_department", args=[department.id]),
         ]
@@ -43,6 +97,8 @@ class AdminActionTests(TestCase):
         self.purchase.refresh_from_db()
         self.assertEqual(self.purchase.status, "pending")
         self.assertTrue(Student.objects.filter(id=self.student.id).exists())
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.is_active)
         self.assertTrue(AddOnCourse.objects.filter(id=self.course.id).exists())
         self.assertTrue(Department.objects.filter(id=department.id).exists())
 
@@ -112,6 +168,20 @@ class PageSmokeTests(TestCase):
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 403)
 
+    def test_student_on_a_principal_page_sees_the_styled_403_page(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("principal:admin_students"))
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTemplateUsed(response, "403.html")
+        self.assertTemplateUsed(response, "base.html")
+        self.assertContains(response, "don't have permission", status_code=403)
+        self.assertContains(
+            response,
+            f'href="{reverse("student:student_dashboard")}"',
+            status_code=403,
+        )
+
     def test_student_gets_403_on_principal_actions(self):
         self.client.force_login(self.student)
         purchase = CoursePurchase.objects.create(
@@ -123,6 +193,8 @@ class PageSmokeTests(TestCase):
             reverse("principal:admin_delete_course", args=[self.course.id]),
             reverse("principal:admin_delete_department", args=[self.department.id]),
             reverse("principal:admin_delete_student", args=[self.student.id]),
+            reverse("principal:admin_deactivate_student", args=[self.student.id]),
+            reverse("principal:admin_reactivate_student", args=[self.student.id]),
         ]
         for url in urls:
             with self.subTest(url=url):
@@ -130,6 +202,8 @@ class PageSmokeTests(TestCase):
         purchase.refresh_from_db()
         self.assertEqual(purchase.status, "pending")
         self.assertTrue(Student.objects.filter(id=self.student.id).exists())
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.is_active)
 
     def test_login_redirect_uses_the_real_login_page(self):
         # PublicAccessMiddleware sends anonymous browsers to the landing page
@@ -206,6 +280,26 @@ class StaffAccountProtectionTests(TestCase):
                 )
                 self.assertEqual(response.status_code, 404)
                 self.assertTrue(Student.objects.filter(id=account.id).exists())
+
+    def test_student_deactivate_does_not_lock_out_staff_accounts(self):
+        for account in (self.colleague, self.admin):
+            with self.subTest(account=account.username):
+                response = self.client.post(
+                    reverse("principal:admin_deactivate_student", args=[account.id])
+                )
+                self.assertEqual(response.status_code, 404)
+                account.refresh_from_db()
+                self.assertTrue(account.is_active)
+
+    def test_student_reactivate_does_not_touch_staff_accounts(self):
+        self.colleague.is_active = False
+        self.colleague.save()
+        response = self.client.post(
+            reverse("principal:admin_reactivate_student", args=[self.colleague.id])
+        )
+        self.assertEqual(response.status_code, 404)
+        self.colleague.refresh_from_db()
+        self.assertFalse(self.colleague.is_active)
 
 
 class AddStudentTests(TestCase):
@@ -574,6 +668,132 @@ class StudentCrudTests(TestCase):
         self.assertFalse(Student.objects.filter(id=self.student.id).exists())
 
 
+class StudentDeletionTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        self.url = reverse("principal:admin_delete_student", args=[self.student.id])
+        self.client.force_login(self.admin)
+
+    def test_student_with_enrollments_is_kept_and_steers_to_deactivation(self):
+        purchase = CoursePurchase.objects.create(
+            student=self.student, course=self.course, status="completed"
+        )
+
+        response = self.client.post(self.url, follow=True)
+
+        self.assertRedirects(response, reverse("principal:admin_students"))
+        self.assertContains(response, "enrollment history")
+        self.assertContains(response, "Deactivate")
+        self.assertContains(response, "alert-danger")
+        self.assertTrue(Student.objects.filter(id=self.student.id).exists())
+        self.assertTrue(CoursePurchase.objects.filter(id=purchase.id).exists())
+
+    def test_deleting_through_the_model_is_refused_too(self):
+        CoursePurchase.objects.create(student=self.student, course=self.course)
+        with self.assertRaises(ProtectedError):
+            self.student.delete()
+        self.assertEqual(CoursePurchase.objects.filter(student=self.student).count(), 1)
+
+
+class StudentDeactivationTests(TestCase):
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "principal", "principal@example.com", "Demo-pass-4821"
+        )
+        self.student = Student.objects.create_user(
+            "asha", "asha@example.com", "Demo-pass-4821"
+        )
+        self.course = AddOnCourse.objects.create(
+            name="Cloud Fundamentals", description="Core concepts.", price=2999
+        )
+        self.purchase = CoursePurchase.objects.create(
+            student=self.student, course=self.course, status="completed"
+        )
+        self.deactivate_url = reverse(
+            "principal:admin_deactivate_student", args=[self.student.id]
+        )
+        self.reactivate_url = reverse(
+            "principal:admin_reactivate_student", args=[self.student.id]
+        )
+        self.client.force_login(self.admin)
+
+    def log_in_as_student(self, client):
+        return client.post(
+            reverse("student:login"),
+            {"username": "asha", "password": "Demo-pass-4821"},
+        )
+
+    def test_deactivated_student_cannot_log_in(self):
+        response = self.client.post(self.deactivate_url, follow=True)
+
+        self.assertRedirects(response, reverse("principal:admin_students"))
+        self.assertContains(response, "can no longer log in")
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.is_active)
+
+        visitor = Client()
+        self.assertContains(self.log_in_as_student(visitor), "Invalid credentials")
+        self.assertNotIn("_auth_user_id", visitor.session)
+
+    def test_deactivation_ends_a_session_that_is_already_open(self):
+        student_browser = Client()
+        student_browser.force_login(self.student)
+        dashboard = reverse("student:student_dashboard")
+        self.assertEqual(student_browser.get(dashboard).status_code, 200)
+
+        self.client.post(self.deactivate_url)
+
+        self.assertRedirects(
+            student_browser.get(dashboard), "/", fetch_redirect_response=False
+        )
+
+    def test_deactivated_student_stays_in_enrollment_history(self):
+        self.client.post(self.deactivate_url)
+
+        self.assertTrue(CoursePurchase.objects.filter(id=self.purchase.id).exists())
+        response = self.client.get(reverse("principal:admin_enrollments"))
+        self.assertContains(response, "asha")
+        self.assertContains(response, "Cloud Fundamentals")
+
+    def test_student_list_marks_inactive_students_and_offers_reactivation(self):
+        active = self.client.get(reverse("principal:admin_students"))
+        self.assertNotContains(active, "Inactive")
+        self.assertContains(active, f'action="{self.deactivate_url}"')
+        self.assertNotContains(active, f'action="{self.reactivate_url}"')
+
+        self.client.post(self.deactivate_url)
+
+        inactive = self.client.get(reverse("principal:admin_students"))
+        self.assertContains(inactive, "Inactive")
+        self.assertContains(inactive, f'action="{self.reactivate_url}"')
+        self.assertNotContains(inactive, f'action="{self.deactivate_url}"')
+
+    def test_reactivated_student_can_log_in_again(self):
+        self.client.post(self.deactivate_url)
+
+        response = self.client.post(self.reactivate_url, follow=True)
+
+        self.assertRedirects(response, reverse("principal:admin_students"))
+        self.assertContains(response, "can log in again")
+        self.assertRedirects(
+            self.log_in_as_student(Client()), reverse("student:student_dashboard")
+        )
+
+    def test_unknown_student_returns_404(self):
+        for name in ("admin_deactivate_student", "admin_reactivate_student"):
+            with self.subTest(name=name):
+                response = self.client.post(reverse(f"principal:{name}", args=[999999]))
+                self.assertEqual(response.status_code, 404)
+
+
 class DepartmentCrudTests(TestCase):
     def setUp(self):
         self.admin = Student.objects.create_superuser(
@@ -647,3 +867,137 @@ class CourseCrudTests(TestCase):
         self.assertRedirects(response, reverse("principal:admin_courses"))
         course.refresh_from_db()
         self.assertEqual(course.status, "inactive")
+
+
+class LongUnbrokenTextTests(TestCase):
+    """Usernames, emails, names and descriptions can be long with no spaces.
+    Every table, badge and flash message must let them wrap so the page
+    stays within a phone screen and the action buttons stay on screen."""
+
+    def setUp(self):
+        self.admin = Student.objects.create_superuser(
+            "p" * 150, "principal@example.com", "Demo-pass-4821"
+        )
+        self.department = Department.objects.create(
+            name="D" * 100, description="E" * 400
+        )
+        self.course = AddOnCourse.objects.create(
+            name="C" * 200, description="F" * 400, price=2999
+        )
+        self.student = Student.objects.create_user(
+            "u" * 150,
+            "m" * 64 + "@" + "n" * 63 + ".example.com",
+            "Demo-pass-4821",
+            dept=self.department,
+            rollno=2147483647,
+            is_active=False,
+        )
+        self.purchase = CoursePurchase.objects.create(
+            student=self.student, course=self.course
+        )
+        self.client.force_login(self.admin)
+
+    def assert_every_occurrence_breaks(self, url, values):
+        self.assert_breaks(self.client.get(url), values)
+
+    def assert_breaks(self, response, values):
+        html = response.content.decode()
+        url = response.request["PATH_INFO"]
+        for value, (places, unbreakable) in unbreakable_occurrences(
+            html, values
+        ).items():
+            with self.subTest(url=url, value=value[:20]):
+                self.assertTrue(places, "value is not shown on the page")
+                self.assertEqual(unbreakable, [])
+
+    def assert_flash_breaks(self, url, value):
+        response = self.client.post(url, follow=True)
+        messages = [str(message) for message in response.context["messages"]]
+        self.assertTrue(
+            any(value in message for message in messages),
+            "the action did not show a message naming the student",
+        )
+        self.assert_breaks(response, [value])
+
+    def test_dashboard_pending_requests(self):
+        self.assert_every_occurrence_breaks(
+            reverse("principal:admin_dashboard"),
+            [self.admin.username, self.student.username, self.course.name],
+        )
+
+    def test_deactivate_message(self):
+        self.assert_flash_breaks(
+            reverse("principal:admin_deactivate_student", args=[self.student.id]),
+            self.student.username,
+        )
+
+    def test_reactivate_message(self):
+        self.assert_flash_breaks(
+            reverse("principal:admin_reactivate_student", args=[self.student.id]),
+            self.student.username,
+        )
+
+    def test_approve_message(self):
+        self.assert_flash_breaks(
+            reverse("principal:approve_course", args=[self.purchase.id]),
+            self.student.username,
+        )
+
+    def test_reject_message(self):
+        self.assert_flash_breaks(
+            reverse("principal:reject_course", args=[self.purchase.id]),
+            self.student.username,
+        )
+
+    def test_students_list(self):
+        self.assert_every_occurrence_breaks(
+            reverse("principal:admin_students"),
+            [
+                self.student.username,
+                self.student.email,
+                self.department.name,
+                str(self.student.rollno),
+            ],
+        )
+
+    def test_courses_list(self):
+        self.assert_every_occurrence_breaks(
+            reverse("principal:admin_courses"),
+            [self.course.name, self.course.description],
+        )
+
+    def test_departments_list(self):
+        self.assert_every_occurrence_breaks(
+            reverse("principal:admin_departments"),
+            [self.department.name, self.department.description],
+        )
+
+    def test_enrollment_history(self):
+        self.assert_every_occurrence_breaks(
+            reverse("principal:admin_enrollments"),
+            [self.student.username, self.course.name],
+        )
+
+    def test_department_select_is_capped_to_screen_width(self):
+        # The add and edit student forms render an unstyled select, which
+        # grows to its longest option unless the page caps its width.
+        for url in [
+            reverse("principal:admin_add_student"),
+            reverse("principal:admin_edit_student", args=[self.student.id]),
+        ]:
+            with self.subTest(url=url):
+                html = self.client.get(url).content.decode()
+                self.assertIn(self.department.name, html)
+                styles = re.sub(
+                    r"/\*.*?\*/",
+                    "",
+                    "".join(re.findall(r"<style>(.*?)</style>", html, re.S)),
+                    flags=re.S,
+                )
+                capped = [
+                    rule
+                    for rule in re.findall(r"([^{}]+)\{([^}]*)\}", styles)
+                    if "select" in re.split(r"\s*,\s*", rule[0].strip())
+                    and re.search(r"max-width:\s*100%", rule[1])
+                ]
+                self.assertTrue(capped, "no style caps select width")

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Access denied | Edustream{% endblock %}
+{% block content %}
+
+{% url 'landing' as back_url %}
+{% if user.is_authenticated %}
+  {% if user.is_staff %}
+    {% url 'principal:admin_dashboard' as back_url %}
+  {% else %}
+    {% url 'student:student_dashboard' as back_url %}
+  {% endif %}
+{% endif %}
+
+<div class="text-center mt-5">
+  <h4 class="fw-bold">Access denied</h4>
+  <p>You don't have permission to open this page.</p>
+
+  <a href="{{ back_url }}" class="btn btn-primary mt-3">
+    {% if user.is_authenticated %}Go to your dashboard{% else %}Go to the home page{% endif %}
+  </a>
+</div>
+
+{% endblock %}
